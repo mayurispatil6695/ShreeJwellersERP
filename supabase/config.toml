@@ -1,0 +1,10 @@
+project_id = "psiznxyjuhtaxlyavjoa"
+
+[functions.employee-auth]
+verify_jwt = false
+
+[functions.manage-employees]
+verify_jwt = false
+
+[functions.employee-data]
+verify_jwt = false
