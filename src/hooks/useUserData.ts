@@ -44,7 +44,7 @@ export function useUserData() {
   );
 
   const addItem = useCallback(
-    async <T extends Record<string, any>>(collection: string, data: T): Promise<string> => {
+    async <T extends Record<string, unknown>>(collection: string, data: T): Promise<string> => {
       const path = getUserPath(collection);
       const newRef = push(ref(db, path));
       await set(newRef, {
@@ -58,7 +58,7 @@ export function useUserData() {
   );
 
   const updateItem = useCallback(
-    async (collection: string, id: string, data: Record<string, any>): Promise<void> => {
+    async (collection: string, id: string, data: Record<string, unknown>): Promise<void> => {
       const path = getUserPath(collection);
       await update(ref(db, `${path}/${id}`), {
         ...data,
@@ -77,13 +77,14 @@ export function useUserData() {
   );
 
   const getByField = useCallback(
-    async <T>(collection: string, field: string, value: any): Promise<(T & { id: string })[]> => {
+    async <T>(collection: string, field: string, value: unknown): Promise<(T & { id: string })[]> => {
       const path = getUserPath(collection);
       const snapshot = await get(ref(db, path));
       if (!snapshot.exists()) return [];
       const items: (T & { id: string })[] = [];
       snapshot.forEach((child) => {
         const data = child.val();
+        // Strict equality works for strings, numbers, booleans, null.
         if (data[field] === value) {
           items.push({ id: child.key!, ...data });
         }

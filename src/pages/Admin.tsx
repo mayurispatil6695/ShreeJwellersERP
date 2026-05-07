@@ -60,6 +60,24 @@ import {
 import { format } from "date-fns";
 import { EmployeeManagement } from "@/components/admin/EmployeeManagement";
 
+// Firebase data shapes
+interface ProfileRecord {
+  id: string;
+  user_id: string;
+  email: string;
+  display_name: string | null;
+  avatar_url: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface UserRoleRecord {
+  id: string;
+  user_id: string;
+  role: AppRole;
+  created_at: string;
+}
+
 interface AdminUser {
   id: string;
   email: string;
@@ -95,24 +113,26 @@ const Admin = () => {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      // Fetch from Firebase RTDB
-      const profiles = await getAll<any>('profiles');
-      const roles = await getAll<any>('user_roles');
+      const profiles = await getAll<ProfileRecord>('profiles');
+      const roles = await getAll<UserRoleRecord>('user_roles');
 
-      const mappedUsers: AdminUser[] = profiles.map((p: any) => ({
-        id: p.user_id || p.id,
-        email: p.email || 'N/A',
-        created_at: p.created_at || new Date().toISOString(),
+      const mappedUsers: AdminUser[] = profiles.map((profile) => ({
+        id: profile.user_id,
+        email: profile.email,
+        created_at: profile.created_at,
         last_sign_in_at: null,
-        display_name: p.display_name || null,
-        avatar_url: p.avatar_url || null,
-        roles: roles.filter((r: any) => r.user_id === (p.user_id || p.id)).map((r: any) => r.role as AppRole),
+        display_name: profile.display_name,
+        avatar_url: profile.avatar_url,
+        roles: roles.filter((r) => r.user_id === profile.user_id).map((r) => r.role),
       }));
 
-      // Ensure at least user role for all
-      mappedUsers.forEach(u => { if (u.roles.length === 0) u.roles = ['user']; });
+      // Ensure at least 'user' role for all
+      mappedUsers.forEach((u) => {
+        if (u.roles.length === 0) u.roles = ['user'];
+      });
       setUsers(mappedUsers);
-    } catch (error: any) {
+    } catch (err) {
+      const error = err as Error;
       console.error("Error fetching users:", error);
       toast.error("Failed to fetch users");
     } finally {
@@ -127,14 +147,16 @@ const Admin = () => {
       if (roleAction.action === 'add') {
         await addItem('user_roles', { user_id: selectedUser.id, role: roleAction.role });
       } else {
-        const existing = await getByField<any>('user_roles', 'user_id', selectedUser.id);
-        const toRemove = existing.find((r: any) => r.role === roleAction.role);
+        // Remove role: fetch existing records for this user
+        const existingRecords = await getByField<UserRoleRecord>('user_roles', 'user_id', selectedUser.id);
+        const toRemove = existingRecords.find((r) => r.role === roleAction.role);
         if (toRemove) await deleteItem('user_roles', toRemove.id);
       }
       toast.success(`Successfully ${roleAction.action === 'add' ? 'added' : 'removed'} ${roleAction.role} role`);
       setRoleDialogOpen(false);
       fetchUsers();
-    } catch (error: any) {
+    } catch (err) {
+      const error = err as Error;
       console.error("Error updating role:", error);
       toast.error(error.message || "Failed to update role");
     } finally {
@@ -157,17 +179,19 @@ const Admin = () => {
     if (!selectedUser) return;
     try {
       setDeleting(true);
-      // Remove user roles and profile from Firebase
-      const roles = await getByField<any>('user_roles', 'user_id', selectedUser.id);
+      // Remove user roles
+      const roles = await getByField<UserRoleRecord>('user_roles', 'user_id', selectedUser.id);
       for (const r of roles) await deleteItem('user_roles', r.id);
-      const profiles = await getByField<any>('profiles', 'user_id', selectedUser.id);
+      // Remove user profile
+      const profiles = await getByField<ProfileRecord>('profiles', 'user_id', selectedUser.id);
       for (const p of profiles) await deleteItem('profiles', p.id);
-      
+
       toast.success(`Successfully deleted user ${selectedUser.display_name || selectedUser.email}`);
       setDeleteDialogOpen(false);
       setSelectedUser(null);
       fetchUsers();
-    } catch (error: any) {
+    } catch (err) {
+      const error = err as Error;
       console.error("Error deleting user:", error);
       toast.error(error.message || "Failed to delete user");
     } finally {
@@ -253,257 +277,256 @@ const Admin = () => {
           </TabsList>
 
           <TabsContent value="users" className="mt-6 space-y-6">
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card variant="elevated">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-primary/10">
-                  <Users className="w-5 h-5 text-primary" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{stats.total}</p>
-                  <p className="text-xs text-muted-foreground">Total Users</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card variant="elevated">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-amber-500/10">
-                  <Crown className="w-5 h-5 text-amber-500" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{stats.admins}</p>
-                  <p className="text-xs text-muted-foreground">Admins</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card variant="elevated">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-blue-500/10">
-                  <ShieldCheck className="w-5 h-5 text-blue-500" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{stats.moderators}</p>
-                  <p className="text-xs text-muted-foreground">Moderators</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card variant="elevated">
-            <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-green-500/10">
-                  <User className="w-5 h-5 text-green-500" />
-                </div>
-                <div>
-                  <p className="text-2xl font-bold">{stats.regularUsers}</p>
-                  <p className="text-xs text-muted-foreground">Regular Users</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Users Table */}
-        <Card variant="elevated">
-          <CardHeader>
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <Shield className="w-5 h-5 text-primary" />
-                  User Management
-                </CardTitle>
-                <CardDescription>View and manage user roles</CardDescription>
-              </div>
-              <div className="relative w-full sm:w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search users..."
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className="pl-9"
-                />
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="space-y-4">
-                {[...Array(5)].map((_, i) => (
-                  <div key={i} className="flex items-center gap-4">
-                    <Skeleton className="h-10 w-10 rounded-full" />
-                    <div className="space-y-2 flex-1">
-                      <Skeleton className="h-4 w-1/4" />
-                      <Skeleton className="h-3 w-1/3" />
+            {/* Stats Cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <Card variant="elevated">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-primary/10">
+                      <Users className="w-5 h-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold">{stats.total}</p>
+                      <p className="text-xs text-muted-foreground">Total Users</p>
                     </div>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <>
-                <div className="rounded-lg border overflow-hidden">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>User</TableHead>
-                        <TableHead>Roles</TableHead>
-                        <TableHead className="hidden md:table-cell">Joined</TableHead>
-                        <TableHead className="hidden lg:table-cell">Last Sign In</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {paginatedUsers.length === 0 ? (
-                        <TableRow>
-                          <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                            No users found
-                          </TableCell>
-                        </TableRow>
-                      ) : (
-                        paginatedUsers.map((adminUser) => (
-                          <TableRow key={adminUser.id}>
-                            <TableCell>
-                              <div className="flex items-center gap-3">
-                                <Avatar className="h-9 w-9">
-                                  <AvatarImage src={adminUser.avatar_url || undefined} />
-                                  <AvatarFallback className="bg-primary/10 text-primary">
-                                    {(adminUser.display_name || adminUser.email || '?')[0].toUpperCase()}
-                                  </AvatarFallback>
-                                </Avatar>
-                                <div className="min-w-0">
-                                  <p className="font-medium text-sm truncate">
-                                    {adminUser.display_name || 'No name'}
-                                    {adminUser.id === user?.uid && (
-                                      <Badge variant="outline" className="ml-2 text-xs">You</Badge>
-                                    )}
-                                  </p>
-                                  <p className="text-xs text-muted-foreground truncate">
-                                    {adminUser.email}
-                                  </p>
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex flex-wrap gap-1">
-                                {adminUser.roles.map((role) => (
-                                  <span key={role}>{getRoleBadge(role)}</span>
-                                ))}
-                              </div>
-                            </TableCell>
-                            <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                              {format(new Date(adminUser.created_at), 'MMM d, yyyy')}
-                            </TableCell>
-                            <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
-                              {adminUser.last_sign_in_at 
-                                ? format(new Date(adminUser.last_sign_in_at), 'MMM d, yyyy h:mm a')
-                                : 'Never'
-                              }
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon">
-                                    <MoreHorizontal className="w-4 h-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuLabel>Manage Roles</DropdownMenuLabel>
-                                  <DropdownMenuSeparator />
-                                  {!adminUser.roles.includes('admin') ? (
-                                    <DropdownMenuItem onClick={() => openRoleDialog(adminUser, 'admin', 'add')}>
-                                      <UserPlus className="w-4 h-4 mr-2" />
-                                      Make Admin
-                                    </DropdownMenuItem>
-                                  ) : adminUser.id !== user?.uid && (
-                                    <DropdownMenuItem 
-                                      onClick={() => openRoleDialog(adminUser, 'admin', 'remove')}
-                                      className="text-destructive"
-                                    >
-                                      <UserMinus className="w-4 h-4 mr-2" />
-                                      Remove Admin
-                                    </DropdownMenuItem>
-                                  )}
-                                  {!adminUser.roles.includes('moderator') ? (
-                                    <DropdownMenuItem onClick={() => openRoleDialog(adminUser, 'moderator', 'add')}>
-                                      <UserPlus className="w-4 h-4 mr-2" />
-                                      Make Moderator
-                                    </DropdownMenuItem>
-                                  ) : (
-                                    <DropdownMenuItem 
-                                      onClick={() => openRoleDialog(adminUser, 'moderator', 'remove')}
-                                      className="text-destructive"
-                                    >
-                                      <UserMinus className="w-4 h-4 mr-2" />
-                                      Remove Moderator
-                                    </DropdownMenuItem>
-                                  )}
-                                  {adminUser.id !== user?.uid && (
-                                    <>
-                                      <DropdownMenuSeparator />
-                                      <DropdownMenuItem 
-                                        onClick={() => openDeleteDialog(adminUser)}
-                                        className="text-destructive"
-                                      >
-                                        <Trash2 className="w-4 h-4 mr-2" />
-                                        Delete User
-                                      </DropdownMenuItem>
-                                    </>
-                                  )}
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
-
-                {/* Pagination */}
-                {totalPages > 1 && (
-                  <div className="mt-4">
-                    <Pagination>
-                      <PaginationContent>
-                        <PaginationItem>
-                          <PaginationPrevious 
-                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                            className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                          />
-                        </PaginationItem>
-                        {[...Array(totalPages)].map((_, i) => (
-                          <PaginationItem key={i}>
-                            <PaginationLink 
-                              isActive={currentPage === i + 1}
-                              onClick={() => setCurrentPage(i + 1)}
-                              className="cursor-pointer"
-                            >
-                              {i + 1}
-                            </PaginationLink>
-                          </PaginationItem>
-                        ))}
-                        <PaginationItem>
-                          <PaginationNext 
-                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                            className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                          />
-                        </PaginationItem>
-                      </PaginationContent>
-                    </Pagination>
+                </CardContent>
+              </Card>
+              <Card variant="elevated">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-amber-500/10">
+                      <Crown className="w-5 h-5 text-amber-500" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold">{stats.admins}</p>
+                      <p className="text-xs text-muted-foreground">Admins</p>
+                    </div>
                   </div>
+                </CardContent>
+              </Card>
+              <Card variant="elevated">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-blue-500/10">
+                      <ShieldCheck className="w-5 h-5 text-blue-500" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold">{stats.moderators}</p>
+                      <p className="text-xs text-muted-foreground">Moderators</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card variant="elevated">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-green-500/10">
+                      <User className="w-5 h-5 text-green-500" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold">{stats.regularUsers}</p>
+                      <p className="text-xs text-muted-foreground">Regular Users</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Users Table */}
+            <Card variant="elevated">
+              <CardHeader>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <Shield className="w-5 h-5 text-primary" />
+                      User Management
+                    </CardTitle>
+                    <CardDescription>View and manage user roles</CardDescription>
+                  </div>
+                  <div className="relative w-full sm:w-64">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search users..."
+                      value={searchQuery}
+                      onChange={(e) => {
+                        setSearchQuery(e.target.value);
+                        setCurrentPage(1);
+                      }}
+                      className="pl-9"
+                    />
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {loading ? (
+                  <div className="space-y-4">
+                    {[...Array(5)].map((_, i) => (
+                      <div key={i} className="flex items-center gap-4">
+                        <Skeleton className="h-10 w-10 rounded-full" />
+                        <div className="space-y-2 flex-1">
+                          <Skeleton className="h-4 w-1/4" />
+                          <Skeleton className="h-3 w-1/3" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <>
+                    <div className="rounded-lg border overflow-hidden">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>User</TableHead>
+                            <TableHead>Roles</TableHead>
+                            <TableHead className="hidden md:table-cell">Joined</TableHead>
+                            <TableHead className="hidden lg:table-cell">Last Sign In</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {paginatedUsers.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                                No users found
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            paginatedUsers.map((adminUser) => (
+                              <TableRow key={adminUser.id}>
+                                <TableCell>
+                                  <div className="flex items-center gap-3">
+                                    <Avatar className="h-9 w-9">
+                                      <AvatarImage src={adminUser.avatar_url || undefined} />
+                                      <AvatarFallback className="bg-primary/10 text-primary">
+                                        {(adminUser.display_name || adminUser.email || '?')[0].toUpperCase()}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <div className="min-w-0">
+                                      <p className="font-medium text-sm truncate">
+                                        {adminUser.display_name || 'No name'}
+                                        {adminUser.id === user?.uid && (
+                                          <Badge variant="outline" className="ml-2 text-xs">You</Badge>
+                                        )}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground truncate">
+                                        {adminUser.email}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex flex-wrap gap-1">
+                                    {adminUser.roles.map((role) => (
+                                      <span key={role}>{getRoleBadge(role)}</span>
+                                    ))}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                                  {format(new Date(adminUser.created_at), 'MMM d, yyyy')}
+                                </TableCell>
+                                <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
+                                  {adminUser.last_sign_in_at 
+                                    ? format(new Date(adminUser.last_sign_in_at), 'MMM d, yyyy h:mm a')
+                                    : 'Never'
+                                  }
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button variant="ghost" size="icon">
+                                        <MoreHorizontal className="w-4 h-4" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      <DropdownMenuLabel>Manage Roles</DropdownMenuLabel>
+                                      <DropdownMenuSeparator />
+                                      {!adminUser.roles.includes('admin') ? (
+                                        <DropdownMenuItem onClick={() => openRoleDialog(adminUser, 'admin', 'add')}>
+                                          <UserPlus className="w-4 h-4 mr-2" />
+                                          Make Admin
+                                        </DropdownMenuItem>
+                                      ) : adminUser.id !== user?.uid && (
+                                        <DropdownMenuItem 
+                                          onClick={() => openRoleDialog(adminUser, 'admin', 'remove')}
+                                          className="text-destructive"
+                                        >
+                                          <UserMinus className="w-4 h-4 mr-2" />
+                                          Remove Admin
+                                        </DropdownMenuItem>
+                                      )}
+                                      {!adminUser.roles.includes('moderator') ? (
+                                        <DropdownMenuItem onClick={() => openRoleDialog(adminUser, 'moderator', 'add')}>
+                                          <UserPlus className="w-4 h-4 mr-2" />
+                                          Make Moderator
+                                        </DropdownMenuItem>
+                                      ) : (
+                                        <DropdownMenuItem 
+                                          onClick={() => openRoleDialog(adminUser, 'moderator', 'remove')}
+                                          className="text-destructive"
+                                        >
+                                          <UserMinus className="w-4 h-4 mr-2" />
+                                          Remove Moderator
+                                        </DropdownMenuItem>
+                                      )}
+                                      {adminUser.id !== user?.uid && (
+                                        <>
+                                          <DropdownMenuSeparator />
+                                          <DropdownMenuItem 
+                                            onClick={() => openDeleteDialog(adminUser)}
+                                            className="text-destructive"
+                                          >
+                                            <Trash2 className="w-4 h-4 mr-2" />
+                                            Delete User
+                                          </DropdownMenuItem>
+                                        </>
+                                      )}
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    {/* Pagination */}
+                    {totalPages > 1 && (
+                      <div className="mt-4">
+                        <Pagination>
+                          <PaginationContent>
+                            <PaginationItem>
+                              <PaginationPrevious 
+                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                className={currentPage === 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                              />
+                            </PaginationItem>
+                            {[...Array(totalPages)].map((_, i) => (
+                              <PaginationItem key={i}>
+                                <PaginationLink 
+                                  isActive={currentPage === i + 1}
+                                  onClick={() => setCurrentPage(i + 1)}
+                                  className="cursor-pointer"
+                                >
+                                  {i + 1}
+                                </PaginationLink>
+                              </PaginationItem>
+                            ))}
+                            <PaginationItem>
+                              <PaginationNext 
+                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                className={currentPage === totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
+                              />
+                            </PaginationItem>
+                          </PaginationContent>
+                        </Pagination>
+                      </div>
+                    )}
+                  </>
                 )}
-              </>
-            )}
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="employees" className="mt-6">

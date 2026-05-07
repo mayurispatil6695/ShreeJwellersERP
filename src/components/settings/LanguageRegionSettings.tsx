@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -6,36 +6,44 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Globe, Check, Loader2 } from 'lucide-react';
 import { useUserPreferences } from '@/hooks/useUserPreferences';
 import { SUPPORTED_LANGUAGES, SUPPORTED_REGIONS, SUPPORTED_TIMEZONES, t } from '@/lib/languages';
+import { toast } from 'sonner';
 
 export function LanguageRegionSettings() {
   const { preferences, loading, updatePreferences } = useUserPreferences();
   const [saving, setSaving] = useState(false);
   const [localPrefs, setLocalPrefs] = useState({
-    language: preferences?.language || 'en',
-    region: preferences?.region || 'IN',
-    timezone: preferences?.timezone || 'Asia/Kolkata',
+    language: 'en',
+    region: 'IN',
+    timezone: 'Asia/Kolkata',
   });
 
-  // Sync local state when preferences load
-  useState(() => {
+  // Sync local state when preferences load from Firebase
+  useEffect(() => {
     if (preferences) {
       setLocalPrefs({
-        language: preferences.language,
+        language: preferences.language || 'en',
         region: preferences.region || 'IN',
         timezone: preferences.timezone || 'Asia/Kolkata',
       });
     }
-  });
+  }, [preferences]);
 
   const handleSave = async () => {
     setSaving(true);
-    const success = await updatePreferences({
-      language: localPrefs.language,
-      region: localPrefs.region,
-      timezone: localPrefs.timezone,
-      currency: SUPPORTED_REGIONS.find(r => r.code === localPrefs.region)?.currency || 'INR',
-    });
-    setSaving(false);
+    try {
+      await updatePreferences({
+        language: localPrefs.language,
+        region: localPrefs.region,
+        timezone: localPrefs.timezone,
+        currency: SUPPORTED_REGIONS.find(r => r.code === localPrefs.region)?.currency || 'INR',
+      });
+      toast.success('Preferences saved successfully');
+    } catch (error) {
+      console.error('Save failed:', error);
+      toast.error('Failed to save preferences');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const hasChanges = preferences && (

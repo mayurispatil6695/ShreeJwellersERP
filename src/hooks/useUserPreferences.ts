@@ -66,9 +66,10 @@ export function useUserPreferences() {
       } else {
         setPreferences(results[0]);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error fetching preferences:', error);
-      toast.error('Failed to load preferences');
+      const message = error instanceof Error ? error.message : 'Failed to load preferences';
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -79,12 +80,13 @@ export function useUserPreferences() {
 
     try {
       await updateItem('user_preferences', preferences.id, updates);
-      setPreferences({ ...preferences, ...updates } as UserPreferences);
+      setPreferences({ ...preferences, ...updates }); // no cast needed
       toast.success('Preferences updated');
       return true;
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error updating preferences:', error);
-      toast.error('Failed to update preferences');
+      const message = error instanceof Error ? error.message : 'Failed to update preferences';
+      toast.error(message);
       return false;
     }
   };

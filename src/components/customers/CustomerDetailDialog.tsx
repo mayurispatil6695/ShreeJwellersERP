@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { LucideIcon } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -321,7 +322,7 @@ export function CustomerDetailDialog({ customer, open, onOpenChange }: Props) {
   );
 }
 
-function InfoItem({ icon: Icon, label, value }: { icon: any; label: string; value: string }) {
+function InfoItem({ icon: Icon, label, value }: { icon: LucideIcon;  label: string; value: string }) {
   return (
     <div className="flex items-start gap-2 p-2 rounded-md bg-muted/30">
       <Icon className="w-3.5 h-3.5 text-muted-foreground mt-0.5 shrink-0" />
