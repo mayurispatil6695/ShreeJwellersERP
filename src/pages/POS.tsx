@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/select";
 import {
   ShoppingCart, Barcode, Search, Plus, Minus, Trash2,
-  CreditCard, Banknote, Smartphone, Loader2, Calculator, Gem, Zap, Gift, Package, UserPlus, Cake, Phone, User, MapPin, Mail, Calendar, Sparkles, Percent, IndianRupee,
+  CreditCard, Banknote, Smartphone, Loader2, Calculator, Gem, Zap, Gift, Package, UserPlus, Cake, Phone, User, MapPin, Mail, Calendar, Sparkles, IndianRupee,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { GoldRateCalculator, type ProductForCalc, type CalcResult } from "@/components/pos/GoldRateCalculator";
@@ -23,12 +23,9 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Label } from "@/components/ui/label";
 import { useNotifications } from "@/hooks/useNotifications";
 
-// ---------- NEW IMPORTS FOR PRINTING ----------
+// QZ Tray imports (will be used only if available)
 import qz from 'qz-tray';
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
-// (Optional) Import certificate – comment out for localhost testing
-// import { CERTIFICATE } from '@/constants/qzTrayCertificate';
-// ---------------------------------------------
 
 interface Product {
   id: string;
@@ -101,7 +98,6 @@ const POS = () => {
   const [newCustomerEmail, setNewCustomerEmail] = useState("");
   const [newCustomerDob, setNewCustomerDob] = useState("");
   const [newCustomerAddress, setNewCustomerAddress] = useState("");
-  // Imitation discount
   const [imitationDiscountType, setImitationDiscountType] = useState<"percent" | "flat">("percent");
   const [imitationDiscountValue, setImitationDiscountValue] = useState(0);
   const scanInputRef = useRef<HTMLInputElement>(null);
@@ -129,7 +125,7 @@ const POS = () => {
     }
   }, [selectedCustomer]);
 
-  // Barcode scanner detection
+  // Barcode scanner detection (unchanged)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const active = document.activeElement;
@@ -197,7 +193,6 @@ const POS = () => {
     }
   };
 
-  // Check if cart has imitation items
   const hasImitationItems = cart.some((item) => {
     const name = (item.name || "").toLowerCase();
     const metal = (item.metal_type || "").toLowerCase();
@@ -215,7 +210,6 @@ const POS = () => {
   const isBirthday = selectedCustomer ? isTodayBirthday(selectedCustomer.date_of_birth) : false;
   const birthdayDiscount = birthdayDiscountApplied ? Math.round(subtotal * (birthdayDiscountPercent / 100)) : 0;
 
-  // Imitation discount calculation
   let imitationDiscount = 0;
   if (hasImitationItems && imitationDiscountValue > 0) {
     if (imitationDiscountType === "percent") {
@@ -228,7 +222,9 @@ const POS = () => {
   const totalDiscount = birthdayDiscount + imitationDiscount;
   const total = subtotal + tax - totalDiscount;
 
-  // ---------- NEW HELPER: Generate ESC/POS receipt data ----------
+  // ==================== PRINTING: HYBRID (QZ Tray with Browser Fallback) ====================
+
+  // 1. ESC/POS receipt data (for QZ Tray)
   const generateReceiptData = (saleData: {
     invoice_number: string;
     customer_name: string;
@@ -278,10 +274,94 @@ const POS = () => {
 
     return encoder.encode();
   };
-  // ----------------------------------------------------------------
 
-  // ---------- NEW: Print receipt via QZ Tray ----------
-  const printReceipt = useCallback(async (saleData: {
+  // 2. Generate HTML receipt (for browser fallback)
+  const generateReceiptHTML = (saleData: {
+    invoiceNumber: string;
+    customerName: string;
+    items: { name: string; qty: number; price: number }[];
+    subtotal: number;
+    tax: number;
+    total: number;
+  }) => {
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Shree Jewellers - Receipt</title>
+        <style>
+          body { font-family: 'Arial', sans-serif; width: 300px; margin: 0 auto; padding: 20px; }
+          .header { text-align: center; border-bottom: 2px solid #c8a45a; margin-bottom: 16px; }
+          .header h1 { margin: 0; color: #c8a45a; font-size: 18px; }
+          .header p { margin: 4px 0; font-size: 12px; color: #666; }
+          .details { font-size: 12px; margin: 12px 0; }
+          .items { width: 100%; font-size: 12px; border-collapse: collapse; }
+          .items th, .items td { text-align: left; padding: 6px 0; border-bottom: 1px solid #ddd; }
+          .items th { border-bottom: 2px solid #c8a45a; }
+          .totals { margin-top: 12px; font-size: 12px; border-top: 1px solid #ccc; padding-top: 8px; }
+          .total-row { font-weight: bold; font-size: 14px; margin-top: 6px; }
+          .footer { text-align: center; margin-top: 24px; font-size: 11px; color: #888; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>Shree Jewellers</h1>
+          <p>${new Date().toLocaleString()}</p>
+        </div>
+        <div class="details">
+          <strong>Invoice:</strong> ${saleData.invoiceNumber}<br/>
+          <strong>Customer:</strong> ${saleData.customerName}
+        </div>
+        <table class="items">
+          <thead>
+            <tr><th>Item</th><th>Qty</th><th>Amount</th></tr>
+          </thead>
+          <tbody>
+            ${saleData.items.map(item => `
+              <tr>
+                <td>${item.name}</td>
+                <td>${item.qty}</td>
+                <td>₹${(item.price * item.qty).toLocaleString()}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+        <div class="totals">
+          <div>Subtotal: ₹${saleData.subtotal.toLocaleString()}</div>
+          <div>Tax (3%): ₹${saleData.tax.toLocaleString()}</div>
+          <div class="total-row">Total: ₹${saleData.total.toLocaleString()}</div>
+        </div>
+        <div class="footer">
+          Thank you for shopping at Shree Jewellers!
+        </div>
+      </body>
+      </html>
+    `;
+  };
+
+  // 3. Browser print fallback function
+  const printViaBrowser = (saleData: {
+    invoiceNumber: string;
+    customerName: string;
+    items: { name: string; qty: number; price: number }[];
+    subtotal: number;
+    tax: number;
+    total: number;
+  }) => {
+    const printContent = generateReceiptHTML(saleData);
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      toast.error('Please allow pop-ups to print the receipt');
+      return;
+    }
+    printWindow.document.write(printContent);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  };
+
+  // 4. Main print function: try QZ Tray first, fallback to browser if fails
+  const tryPrint = useCallback(async (saleData: {
     invoice_number: string;
     customer_name: string;
     created_at: string;
@@ -290,41 +370,44 @@ const POS = () => {
     tax: number;
     total: number;
   }) => {
+    // Prepare browser fallback data (same content, different format)
+    const browserData = {
+      invoiceNumber: saleData.invoice_number,
+      customerName: saleData.customer_name,
+      items: saleData.items,
+      subtotal: saleData.subtotal,
+      tax: saleData.tax,
+      total: saleData.total,
+    };
+
+    // Try QZ Tray
     try {
-      // For localhost testing, no certificate is needed.
-      // For production, uncomment the lines below and import CERTIFICATE.
-      // qz.security.setCertificatePromise(() => Promise.resolve(CERTIFICATE));
-      // qz.security.setSignatureAlgorithm('SHA512');
-
       await qz.websocket.connect();
-
       const printers = await qz.printers.find();
-      // Try to find a thermal printer – adjust name pattern as needed
+      // Look for a printer that looks like a thermal printer
       const thermalPrinter = printers.find(p =>
         p.name.toLowerCase().includes('epson') ||
         p.name.toLowerCase().includes('tm-t82') ||
         p.name.toLowerCase().includes('xp-80c') ||
-        p.name.toLowerCase().includes('thermal')
+        p.name.toLowerCase().includes('thermal') ||
+        p.name.toLowerCase().includes('printer')
       );
-
       if (!thermalPrinter) {
-        throw new Error('Thermal printer not found. Ensure printer is connected and QZ Tray is running.');
+        throw new Error('No thermal printer found');
       }
-
       const config = qz.configs.create(thermalPrinter.name);
       const receiptData = generateReceiptData(saleData);
-
       await qz.print(config, receiptData);
-      toast.success('Bill printed successfully!');
-    } catch (error: unknown) {
-      console.error('Print error:', error);
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      toast.error(`Print failed: ${message}...`);
-    } finally {
       await qz.websocket.disconnect();
+      toast.success('Bill printed successfully on thermal printer!');
+    } catch (err) {
+      console.warn('QZ Tray failed, falling back to browser print:', err);
+      // Fallback to browser print
+      printViaBrowser(browserData);
     }
   }, []);
-  // ----------------------------------------------------
+
+  // =========================================================================
 
   const completeSaleMutation = useMutation({
     mutationFn: async () => {
@@ -398,7 +481,7 @@ const POS = () => {
         action_url: "/bills",
       });
 
-      // ---- NEW: Print the receipt ----
+      // ---- Hybrid print: try QZ Tray, fallback to browser ----
       const printData = {
         invoice_number: invoiceNumber,
         customer_name: finalCustomer?.name || (customerMode === "new" ? newCustomerName : "Walk-in Customer"),
@@ -408,8 +491,8 @@ const POS = () => {
         tax: tax,
         total: total,
       };
-      await printReceipt(printData);
-      // --------------------------------
+      await tryPrint(printData);
+      // --------------------------------------------------------
 
       setCart([]);
       setSelectedCustomer(null);
@@ -491,7 +574,7 @@ const POS = () => {
 
   return (
     <DashboardLayout>
-      {/* The rest of your JSX remains unchanged – I’m keeping it identical to your original */}
+      {/* JSX – exactly as in your original file (unchanged) */}
       <div className="mb-6 animate-fade-in pt-2 sm:pt-0">
         <h1 className="text-2xl sm:text-3xl font-display font-bold">
           <span className="text-gradient-gold">POS</span> & Sales
@@ -641,7 +724,6 @@ const POS = () => {
           </Card>
         </div>
 
-        {/* Right: Calculator + Payment */}
         <div className="space-y-4 sm:space-y-6">
           <Card variant="elevated">
             <CardHeader className="pb-3">
@@ -654,13 +736,11 @@ const POS = () => {
             </CardContent>
           </Card>
 
-          {/* Payment Summary */}
           <Card variant="gold">
             <CardHeader className="pb-3 sm:pb-4">
               <CardTitle className="text-base sm:text-lg">Payment Summary</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Selected Customer */}
               {selectedCustomer && (
                 <div className={`p-3 rounded-lg border ${isBirthday ? "border-pink-500/30 bg-pink-500/5" : "border-border/50 bg-muted/30"}`}>
                   <div className="flex items-center justify-between">
@@ -678,7 +758,6 @@ const POS = () => {
                     </div>
                     <Button variant="ghost" size="sm" className="h-6 text-xs text-muted-foreground" onClick={() => { setSelectedCustomer(null); setBirthdayDiscountApplied(false); }}>Change</Button>
                   </div>
-                  {/* Birthday banner */}
                   {isBirthday && cart.length > 0 && (
                     <div className="mt-2 p-2 rounded-md bg-gradient-to-r from-pink-500/10 to-orange-400/10 border border-pink-500/20">
                       <p className="text-xs font-semibold text-pink-600 dark:text-pink-400 flex items-center gap-1.5 mb-1.5">
@@ -704,7 +783,6 @@ const POS = () => {
                 </div>
               )}
 
-              {/* Imitation Discount Section */}
               {hasImitationItems && cart.length > 0 && (
                 <div className="p-3 rounded-lg border border-purple-500/30 bg-purple-500/5">
                   <p className="text-xs font-semibold text-purple-600 dark:text-purple-400 flex items-center gap-1.5 mb-2">
@@ -763,7 +841,6 @@ const POS = () => {
         </div>
       </div>
 
-      {/* Checkout Dialog (unchanged) */}
       <Dialog open={showCheckout} onOpenChange={(open) => { setShowCheckout(open); if (!open) resetNewCustomerForm(); }}>
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -777,7 +854,6 @@ const POS = () => {
           </DialogHeader>
 
           <div className="space-y-4">
-            {/* Mode Selector */}
             {!selectedCustomer && (
               <div className="grid grid-cols-3 gap-2">
                 <Button variant={customerMode === "search" ? "default" : "outline"} size="sm" className="text-xs gap-1.5" onClick={() => setCustomerMode("search")}>
@@ -792,7 +868,6 @@ const POS = () => {
               </div>
             )}
 
-            {/* Search Existing Customer */}
             {!selectedCustomer && customerMode === "search" && (
               <div className="space-y-3">
                 <div className="relative">
@@ -830,7 +905,6 @@ const POS = () => {
               </div>
             )}
 
-            {/* New Customer Form */}
             {!selectedCustomer && customerMode === "new" && (
               <div className="space-y-3 p-3 rounded-lg border border-border/50 bg-muted/10">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">New Customer Details</p>
@@ -859,7 +933,6 @@ const POS = () => {
               </div>
             )}
 
-            {/* Walk-in */}
             {!selectedCustomer && customerMode === "walkin" && (
               <div className="p-4 rounded-lg border border-border/50 bg-muted/10 text-center">
                 <User className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
@@ -868,7 +941,6 @@ const POS = () => {
               </div>
             )}
 
-            {/* Selected Customer Display */}
             {selectedCustomer && (
               <div className={`p-3 rounded-lg border ${isBirthday ? "border-pink-500/30 bg-pink-500/5" : "border-border/50 bg-muted/30"}`}>
                 <div className="flex items-center justify-between">
@@ -912,7 +984,6 @@ const POS = () => {
               </div>
             )}
 
-            {/* Bill Summary */}
             <div className="rounded-lg border border-border/50 p-3 space-y-1.5">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Bill Summary</p>
               {cart.map((item) => (

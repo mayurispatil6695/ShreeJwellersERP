@@ -91,30 +91,36 @@ export function Header() {
   };
 
   const handleSearch = async (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" && searchQuery.trim().length >= 2) {
-      setIsSearching(true);
-      setSearchDialogOpen(true);
-      try {
-        const [allProducts, allCustomers] = await Promise.all([
-          getAll<Product>("products"),
-          getAll<Customer>("customers"),
-        ]);
-        const filteredProducts = allProducts.filter((p) =>
-          p.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          p.sku?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          p.barcode?.toLowerCase().includes(searchQuery.toLowerCase())
-        );
-        const filteredCustomers = allCustomers.filter((c) =>
-          c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          c.phone?.includes(searchQuery) ||
-          c.email?.toLowerCase().includes(searchQuery.toLowerCase())
-        );
-        setSearchResults({ products: filteredProducts.slice(0, 10), customers: filteredCustomers.slice(0, 10) });
-      } catch (error) {
-        console.error("Search failed:", error);
-        toast({ title: language === "en" ? "Search failed" : "खोज विफल", description: language === "en" ? "Unable to perform search" : "खोज करने में असमर्थ", variant: "destructive" });
-      } finally {
-        setIsSearching(false);
+    if (e.key === "Enter") {
+      e.preventDefault();      // Stop any form submission
+      e.stopPropagation();     // Prevent event bubbling
+
+      if (searchQuery.trim().length >= 2) {
+        setIsSearching(true);
+        setSearchDialogOpen(true);    // Open dialog immediately
+
+        try {
+          const [allProducts, allCustomers] = await Promise.all([
+            getAll<Product>("products"),
+            getAll<Customer>("customers"),
+          ]);
+          const filteredProducts = allProducts.filter((p) =>
+            p.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            p.sku?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            p.barcode?.toLowerCase().includes(searchQuery.toLowerCase())
+          );
+          const filteredCustomers = allCustomers.filter((c) =>
+            c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            c.phone?.includes(searchQuery) ||
+            c.email?.toLowerCase().includes(searchQuery.toLowerCase())
+          );
+          setSearchResults({ products: filteredProducts.slice(0, 10), customers: filteredCustomers.slice(0, 10) });
+        } catch (error) {
+          console.error("Search failed:", error);
+          toast({ title: language === "en" ? "Search failed" : "खोज विफल", description: language === "en" ? "Unable to perform search" : "खोज करने में असमर्थ", variant: "destructive" });
+        } finally {
+          setIsSearching(false);
+        }
       }
     }
   };

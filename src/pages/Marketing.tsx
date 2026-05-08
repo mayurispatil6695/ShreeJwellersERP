@@ -3,14 +3,16 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Megaphone, Mail, MessageSquare, Bell, Plus, Send, Users, TrendingUp, Calendar, Loader2 } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Megaphone, Mail, MessageSquare, Bell, Plus, Send, Users, TrendingUp, Calendar, Loader2, X, Check, Filter, Phone } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useUserData } from "@/hooks/useUserData";
+import emailjs from "@emailjs/browser";
 
 interface Campaign {
   id: string;
@@ -22,11 +24,49 @@ interface Campaign {
   converted_count: number;
 }
 
+interface Customer {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string;
+  total_purchases: number;
+  city: string | null;
+  date_of_birth: string | null;
+}
+
 const Marketing = () => {
   const { getAll, addItem, updateItem } = useUserData();
+  const queryClient = useQueryClient();
+
+  // Campaign Dialog
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [formData, setFormData] = useState({ name: "", type: "Email", status: "Draft" });
-  const queryClient = useQueryClient();
+
+  // Quick Action Dialogs
+  const [emailDialogOpen, setEmailDialogOpen] = useState(false);
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailContent, setEmailContent] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
+
+  const [smsDialogOpen, setSmsDialogOpen] = useState(false);
+  const [smsMessage, setSmsMessage] = useState("");
+  const [sendingSms, setSendingSms] = useState(false);
+
+  const [pushDialogOpen, setPushDialogOpen] = useState(false);
+  const [pushTitle, setPushTitle] = useState("");
+  const [pushBody, setPushBody] = useState("");
+  const [sendingPush, setSendingPush] = useState(false);
+
+  const [segmentDialogOpen, setSegmentDialogOpen] = useState(false);
+  const [segmentCriteria, setSegmentCriteria] = useState({ minPurchase: "", city: "", hasEmail: false, hasPhone: false });
+  const [segmentedCustomers, setSegmentedCustomers] = useState<Customer[]>([]);
+  const [segmentLoading, setSegmentLoading] = useState(false);
+
+  // Fetch customers for segmentation
+  const { data: customers = [] } = useQuery({
+    queryKey: ["marketing-customers"],
+    queryFn: () => getAll<Customer>("customers"),
+  });
 
   const { data: campaigns = [], isLoading } = useQuery({
     queryKey: ["campaigns"],
@@ -43,11 +83,12 @@ const Marketing = () => {
       setIsDialogOpen(false);
       setFormData({ name: "", type: "Email", status: "Draft" });
     },
-    onError: (error) => toast.error("Failed to create campaign: " + error.message),
+    onError: (error: any) => toast.error("Failed to create campaign: " + error.message),
   });
 
   const activateCampaignMutation = useMutation({
     mutationFn: async (campaignId: string) => {
+      // Simulate sending campaign – in real scenario you'd integrate with email/SMS service
       const sentCount = Math.floor(Math.random() * 2000) + 500;
       const openedCount = Math.floor(sentCount * 0.65);
       const convertedCount = Math.floor(openedCount * 0.1);
@@ -57,12 +98,98 @@ const Marketing = () => {
       queryClient.invalidateQueries({ queryKey: ["campaigns"] });
       toast.success("Campaign activated!");
     },
-    onError: (error) => toast.error("Failed to activate campaign: " + error.message),
+    onError: (error: any) => toast.error("Failed to activate campaign: " + error.message),
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    addCampaignMutation.mutate(formData);
+  // EmailJS integration (requires setup – see notes below)
+  const sendEmailBlast = async () => {
+    if (!emailSubject.trim() || !emailContent.trim()) {
+      toast.error("Please fill in both subject and content");
+      return;
+    }
+    // Get all customers with email
+    const customersWithEmail = customers.filter(c => c.email && c.email.trim());
+    if (customersWithEmail.length === 0) {
+      toast.error("No customers with email found");
+      return;
+    }
+    setSendingEmail(true);
+    try {
+      // Initialize EmailJS if not already done
+      // You need to add your EmailJS public key in .env: VITE_EMAILJS_PUBLIC_KEY
+      if (!emailjs.init) {
+        await import('@emailjs/browser');
+      }
+      // For demo, we'll send a test email to the first customer and show a toast
+      // In production, you would loop or use a backend.
+      // For simplicity here, we'll simulate sending to all.
+      toast.loading(`Sending to ${customersWithEmail.length} customers...`, { duration: 2000 });
+      // Actually send via EmailJS (you need to set up template and service ID)
+      // For now, simulate success
+      setTimeout(() => {
+        toast.success(`Email blast sent to ${customersWithEmail.length} customers!`);
+        setEmailDialogOpen(false);
+        setEmailSubject("");
+        setEmailContent("");
+      }, 1500);
+    } catch (error) {
+      toast.error("Failed to send emails");
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
+  // Simulate SMS sending (requires Twilio or similar)
+  const sendSmsCampaign = async () => {
+    if (!smsMessage.trim()) {
+      toast.error("Please enter SMS message");
+      return;
+    }
+    const customersWithPhone = customers.filter(c => c.phone && c.phone.trim());
+    if (customersWithPhone.length === 0) {
+      toast.error("No customers with phone number found");
+      return;
+    }
+    setSendingSms(true);
+    setTimeout(() => {
+      toast.success(`SMS campaign sent to ${customersWithPhone.length} customers!`);
+      setSmsDialogOpen(false);
+      setSmsMessage("");
+      setSendingSms(false);
+    }, 1500);
+  };
+
+  // Simulate Push Notification (requires Firebase Cloud Messaging setup)
+  const sendPushNotification = async () => {
+    if (!pushTitle.trim() || !pushBody.trim()) {
+      toast.error("Please fill in title and body");
+      return;
+    }
+    setSendingPush(true);
+    setTimeout(() => {
+      toast.success(`Push notification "${pushTitle}" sent!`);
+      setPushDialogOpen(false);
+      setPushTitle("");
+      setPushBody("");
+      setSendingPush(false);
+    }, 1500);
+  };
+
+  // Segment Customers
+  const handleSegment = () => {
+    setSegmentLoading(true);
+    let filtered = [...customers];
+    if (segmentCriteria.minPurchase) {
+      const min = parseFloat(segmentCriteria.minPurchase);
+      if (!isNaN(min)) filtered = filtered.filter(c => (c.total_purchases || 0) >= min);
+    }
+    if (segmentCriteria.city) {
+      filtered = filtered.filter(c => c.city?.toLowerCase().includes(segmentCriteria.city.toLowerCase()));
+    }
+    if (segmentCriteria.hasEmail) filtered = filtered.filter(c => c.email && c.email.trim());
+    if (segmentCriteria.hasPhone) filtered = filtered.filter(c => c.phone && c.phone.trim());
+    setSegmentedCustomers(filtered);
+    setSegmentLoading(false);
   };
 
   const stats = {
@@ -84,7 +211,7 @@ const Marketing = () => {
             <DialogTrigger asChild><Button variant="gold" className="shrink-0 w-full sm:w-auto"><Plus className="w-4 h-4 mr-2" />New Campaign</Button></DialogTrigger>
             <DialogContent className="max-w-md">
               <DialogHeader><DialogTitle>Create New Campaign</DialogTitle></DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <form onSubmit={(e) => { e.preventDefault(); addCampaignMutation.mutate(formData); }} className="space-y-4">
                 <div className="space-y-2"><Label htmlFor="name">Campaign Name *</Label><Input id="name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="Diwali Gold Rush" required /></div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2"><Label>Campaign Type</Label><Select value={formData.type} onValueChange={(v) => setFormData({ ...formData, type: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Email">Email</SelectItem><SelectItem value="SMS">SMS</SelectItem><SelectItem value="Push Notification">Push Notification</SelectItem><SelectItem value="Email + SMS">Email + SMS</SelectItem></SelectContent></Select></div>
@@ -99,6 +226,7 @@ const Marketing = () => {
         </div>
       </div>
 
+      {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 mb-6">
         <Card variant="stat"><CardContent className="pt-4 sm:pt-6 px-3 sm:px-6"><div className="flex items-center gap-1 sm:gap-2"><Send className="w-3 h-3 sm:w-4 sm:h-4 text-primary shrink-0" /><p className="text-xs sm:text-sm text-muted-foreground truncate">Messages Sent</p></div><p className="text-xl sm:text-2xl font-bold">{stats.messagesSent.toLocaleString()}</p></CardContent></Card>
         <Card variant="stat"><CardContent className="pt-4 sm:pt-6 px-3 sm:px-6"><div className="flex items-center gap-1 sm:gap-2"><Users className="w-3 h-3 sm:w-4 sm:h-4 text-green-500 shrink-0" /><p className="text-xs sm:text-sm text-muted-foreground">Open Rate</p></div><p className="text-xl sm:text-2xl font-bold text-green-500">{stats.openRate.toFixed(1)}%</p></CardContent></Card>
@@ -107,6 +235,7 @@ const Marketing = () => {
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-6">
+        {/* Campaigns List */}
         <div className="xl:col-span-2">
           <Card variant="elevated">
             <CardHeader className="pb-3"><CardTitle className="flex items-center gap-2 text-base sm:text-lg"><Megaphone className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />All Campaigns</CardTitle></CardHeader>
@@ -147,16 +276,94 @@ const Marketing = () => {
           </Card>
         </div>
 
+        {/* Quick Actions */}
         <Card variant="elevated">
           <CardHeader className="pb-3 sm:pb-4"><CardTitle className="text-base sm:text-lg">Quick Actions</CardTitle></CardHeader>
           <CardContent className="space-y-2 sm:space-y-3">
-            <Button variant="outline" className="w-full justify-start gap-2 h-10 sm:h-11 text-sm"><Mail className="w-4 h-4 shrink-0" /><span className="truncate">Send Email Blast</span></Button>
-            <Button variant="outline" className="w-full justify-start gap-2 h-10 sm:h-11 text-sm"><MessageSquare className="w-4 h-4 shrink-0" /><span className="truncate">Send SMS Campaign</span></Button>
-            <Button variant="outline" className="w-full justify-start gap-2 h-10 sm:h-11 text-sm"><Bell className="w-4 h-4 shrink-0" /><span className="truncate">Push Notification</span></Button>
-            <Button variant="outline" className="w-full justify-start gap-2 h-10 sm:h-11 text-sm"><Users className="w-4 h-4 shrink-0" /><span className="truncate">Segment Customers</span></Button>
+            <Button variant="outline" className="w-full justify-start gap-2 h-10 sm:h-11 text-sm" onClick={() => setEmailDialogOpen(true)}>
+              <Mail className="w-4 h-4 shrink-0" /><span className="truncate">Send Email Blast</span>
+            </Button>
+            <Button variant="outline" className="w-full justify-start gap-2 h-10 sm:h-11 text-sm" onClick={() => setSmsDialogOpen(true)}>
+              <MessageSquare className="w-4 h-4 shrink-0" /><span className="truncate">Send SMS Campaign</span>
+            </Button>
+            <Button variant="outline" className="w-full justify-start gap-2 h-10 sm:h-11 text-sm" onClick={() => setPushDialogOpen(true)}>
+              <Bell className="w-4 h-4 shrink-0" /><span className="truncate">Push Notification</span>
+            </Button>
+            <Button variant="outline" className="w-full justify-start gap-2 h-10 sm:h-11 text-sm" onClick={() => setSegmentDialogOpen(true)}>
+              <Users className="w-4 h-4 shrink-0" /><span className="truncate">Segment Customers</span>
+            </Button>
           </CardContent>
         </Card>
       </div>
+
+      {/* ===== Email Blast Dialog ===== */}
+      <Dialog open={emailDialogOpen} onOpenChange={setEmailDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Send Email Blast</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2"><Label>Subject</Label><Input value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} placeholder="Special Offer – Diwali Sale" /></div>
+            <div className="space-y-2"><Label>Message Body</Label><Textarea rows={6} value={emailContent} onChange={(e) => setEmailContent(e.target.value)} placeholder="Dear customer, ..." /></div>
+            <Button onClick={sendEmailBlast} disabled={sendingEmail} className="w-full">{sendingEmail ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Mail className="w-4 h-4 mr-2" />}Send to {customers.filter(c => c.email).length} customers</Button>
+            <p className="text-xs text-muted-foreground text-center">Note: Real email sending requires EmailJS configuration. This demo simulates sending.</p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ===== SMS Campaign Dialog ===== */}
+      <Dialog open={smsDialogOpen} onOpenChange={setSmsDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Send SMS Campaign</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2"><Label>SMS Message (max 160 chars)</Label><Textarea rows={3} maxLength={160} value={smsMessage} onChange={(e) => setSmsMessage(e.target.value)} placeholder="Your promotional SMS..." /></div>
+            <Button onClick={sendSmsCampaign} disabled={sendingSms} className="w-full">{sendingSms ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <MessageSquare className="w-4 h-4 mr-2" />}Send to {customers.filter(c => c.phone).length} customers</Button>
+            <p className="text-xs text-muted-foreground text-center">Note: Requires Twilio integration for production.</p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ===== Push Notification Dialog ===== */}
+      <Dialog open={pushDialogOpen} onOpenChange={setPushDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Send Push Notification</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2"><Label>Title</Label><Input value={pushTitle} onChange={(e) => setPushTitle(e.target.value)} placeholder="Special Offer" /></div>
+            <div className="space-y-2"><Label>Body</Label><Textarea rows={3} value={pushBody} onChange={(e) => setPushBody(e.target.value)} placeholder="Get 10% off on gold..." /></div>
+            <Button onClick={sendPushNotification} disabled={sendingPush} className="w-full">{sendingPush ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Bell className="w-4 h-4 mr-2" />}Send to all customers</Button>
+            <p className="text-xs text-muted-foreground text-center">Note: Requires Firebase Cloud Messaging setup for real push notifications.</p>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ===== Segment Customers Dialog ===== */}
+      <Dialog open={segmentDialogOpen} onOpenChange={(open) => { setSegmentDialogOpen(open); if (!open) setSegmentedCustomers([]); }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader><DialogTitle>Segment Customers</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2"><Label>Min Purchase (₹)</Label><Input type="number" placeholder="e.g., 50000" value={segmentCriteria.minPurchase} onChange={(e) => setSegmentCriteria({ ...segmentCriteria, minPurchase: e.target.value })} /></div>
+              <div className="space-y-2"><Label>City</Label><Input placeholder="e.g., Mumbai" value={segmentCriteria.city} onChange={(e) => setSegmentCriteria({ ...segmentCriteria, city: e.target.value })} /></div>
+            </div>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2"><input type="checkbox" checked={segmentCriteria.hasEmail} onChange={(e) => setSegmentCriteria({ ...segmentCriteria, hasEmail: e.target.checked })} /> Has Email</label>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={segmentCriteria.hasPhone} onChange={(e) => setSegmentCriteria({ ...segmentCriteria, hasPhone: e.target.checked })} /> Has Phone</label>
+            </div>
+            <Button variant="outline" onClick={handleSegment} className="w-full"><Filter className="w-4 h-4 mr-2" />Apply Filters</Button>
+            {segmentedCustomers.length > 0 && (
+              <div className="max-h-60 overflow-y-auto border rounded-md p-2">
+                <p className="text-sm font-semibold mb-2">{segmentedCustomers.length} customers found</p>
+                <div className="space-y-2">
+                  {segmentedCustomers.map(c => (
+                    <div key={c.id} className="text-sm p-1 border-b">
+                      <p className="font-medium">{c.name}</p>
+                      <p className="text-xs text-muted-foreground">{c.phone} {c.email ? `• ${c.email}` : ''} • ₹{(c.total_purchases || 0).toLocaleString()}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 };
