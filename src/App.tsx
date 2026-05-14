@@ -27,6 +27,13 @@ import NotFound from "./pages/NotFound";
 import EmployeeDashboard from "./pages/EmployeeDashboard";
 import EmployeeInventory from "./pages/EmployeeInventory";
 import EmployeePOS from "./pages/EmployeePOS";
+import PendingPaymentsPage from "@/pages/PendingPaymentsPage";
+
+import Suppliers from "@/pages/Purchase/Suppliers";
+import PurchaseOrders from "@/pages/Purchase/PurchaseOrders";
+import StockAdjustmentsPage from "@/components/inventory/StockAdjustments";
+
+// Inside the routes:
 
 const queryClient = new QueryClient();
 
@@ -35,13 +42,13 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AuthProvider>
           <EmployeeAuthProvider>
             <Routes>
               <Route path="/auth" element={<Auth />} />
               <Route path="/reset-password" element={<ResetPassword />} />
-              
+
               {/* Admin/User Protected Routes */}
               <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
               <Route path="/pos" element={<ProtectedRoute><POS /></ProtectedRoute>} />
@@ -51,18 +58,22 @@ const App = () => (
               <Route path="/investments" element={<ProtectedRoute><Investments /></ProtectedRoute>} />
               <Route path="/marketing" element={<ProtectedRoute><Marketing /></ProtectedRoute>} />
               <Route path="/analytics" element={<ProtectedRoute><Analytics /></ProtectedRoute>} />
+              <Route path="/suppliers" element={<Suppliers />} />
+<Route path="/purchase-orders" element={<PurchaseOrders />} />
+<Route path="/stock-adjustments" element={<StockAdjustmentsPage />} />
               <Route path="/hr" element={<ProtectedRoute><HR /></ProtectedRoute>} />
               <Route path="/payroll" element={<ProtectedRoute><Payroll /></ProtectedRoute>} />
               <Route path="/branches" element={<ProtectedRoute><Branches /></ProtectedRoute>} />
               <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
               <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
               <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-              
+
               {/* Employee Protected Routes */}
               <Route path="/employee-dashboard" element={<EmployeeProtectedRoute><EmployeeDashboard /></EmployeeProtectedRoute>} />
               <Route path="/employee/inventory" element={<EmployeeProtectedRoute><EmployeeInventory /></EmployeeProtectedRoute>} />
               <Route path="/employee/pos" element={<EmployeeProtectedRoute><EmployeePOS /></EmployeeProtectedRoute>} />
-              
+              / Inside router
+              <Route path="/pending-payments" element={<PendingPaymentsPage />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
             </Routes>

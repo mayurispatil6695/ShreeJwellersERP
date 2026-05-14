@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Package, Search, Plus, Filter, Download, Loader2, QrCode, Pencil, Trash2, MoreHorizontal } from "lucide-react";
+import { Package, Search, Plus, Filter, Download, Loader2, QrCode, Pencil, Trash2, MoreHorizontal, Upload } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -15,6 +15,8 @@ import { toast } from "sonner";
 import { useUserData } from "@/hooks/useUserData";
 import { useNotifications } from "@/hooks/useNotifications";
 import { ProductBarcodeDialog, generateBarcode } from "@/components/inventory/ProductBarcode";
+import * as XLSX from "xlsx";
+import { StockAdjustment } from "@/components/inventory/StockAdjustment";
 
 interface Product {
   id: string;
@@ -30,6 +32,25 @@ interface Product {
   status: string;
 }
 
+interface ExcelProductRow {
+  "Product Name"?: string;
+  name?: string;
+  SKU?: string;
+  sku?: string;
+  Category?: string;
+  category?: string;
+  "Metal Type"?: string;
+  metal_type?: string;
+  "Weight (g)"?: string | number;
+  weight?: string | number;
+  Stock?: string | number;
+  stock?: string | number;
+  "Selling Price"?: string | number;
+  unit_price?: string | number;
+  "Cost Price"?: string | number;
+  purchase_price?: string | number;
+}
+
 const emptyForm = { name: "", category: "Necklace", metal_type: "Gold 22K", weight: "", stock: "", purchase_price: "", unit_price: "" };
 
 const Inventory = () => {
@@ -40,6 +61,13 @@ const Inventory = () => {
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<Product | null>(null);
   const [formData, setFormData] = useState(emptyForm);
+  const [adjustProduct, setAdjustProduct] = useState<Product | null>(null);
+  // Bulk upload states
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkFile, setBulkFile] = useState<File | null>(null);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkResults, setBulkResults] = useState<{ success: number; failed: number }>({ success: 0, failed: 0 });
+  
   const queryClient = useQueryClient();
   const { getAll, addItem, updateItem, deleteItem } = useUserData();
   const { createNotification } = useNotifications();
@@ -49,6 +77,121 @@ const Inventory = () => {
     queryFn: () => getAll<Product>("products"),
   });
 
+  // Export to Excel
+  const exportToExcel = () => {
+    const exportData = products.map(p => ({
+      "Product Name": p.name,
+      SKU: p.sku,
+      Barcode: p.barcode,
+      Category: p.category,
+      "Metal Type": p.metal_type,
+      "Weight (g)": p.weight,
+      "Selling Price": p.unit_price,
+      "Cost Price": p.purchase_price || "",
+      Stock: p.stock,
+      Status: p.status,
+    }));
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Products");
+    XLSX.writeFile(wb, `inventory-${new Date().toISOString()}.xlsx`);
+    toast.success("Inventory exported successfully");
+  };
+
+  // Bulk upload handler – no `any`
+  const handleBulkUpload = async () => {
+  if (!bulkFile) return;
+
+  const fileName = bulkFile.name.toLowerCase();
+  if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls') && !fileName.endsWith('.csv')) {
+    toast.error('Please upload a valid Excel (.xlsx, .xls) or CSV file');
+    return;
+  }
+
+  setBulkLoading(true);
+  setBulkResults({ success: 0, failed: 0 });
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const data = e.target?.result;
+    if (!data) {
+      toast.error('Failed to read file');
+      setBulkLoading(false);
+      return;
+    }
+
+    try {
+      const workbook = XLSX.read(data, { type: "array" });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json<ExcelProductRow>(sheet);
+
+      let success = 0, failed = 0;
+      for (const row of rows) {
+        // ... your existing validation and insertion code
+      
+        try {
+          // Extract values with fallbacks
+          const name = row["Product Name"] || row.name;
+          const sku = row["SKU"] || row.sku;
+          const category = row["Category"] || row.category;
+          const metal_type = row["Metal Type"] || row.metal_type;
+          const weight = typeof (row["Weight (g)]"] ?? row.weight) === "number"
+            ? (row["Weight (g)"] ?? row.weight) as number
+            : parseFloat(String(row["Weight (g)"] ?? row.weight ?? ""));
+          const stock = typeof (row.Stock ?? row.stock) === "number"
+            ? (row.Stock ?? row.stock) as number
+            : parseInt(String(row.Stock ?? row.stock ?? ""), 10);
+          const unit_price = typeof (row["Selling Price"] ?? row.unit_price) === "number"
+            ? (row["Selling Price"] ?? row.unit_price) as number
+            : parseFloat(String(row["Selling Price"] ?? row.unit_price ?? ""));
+          const purchase_price = typeof (row["Cost Price"] ?? row.purchase_price) === "number"
+            ? (row["Cost Price"] ?? row.purchase_price) as number
+            : parseFloat(String(row["Cost Price"] ?? row.purchase_price ?? ""));
+
+          if (!name || !sku || isNaN(weight) || isNaN(stock) || isNaN(unit_price)) {
+            failed++;
+            continue;
+          }
+
+          const barcode = generateBarcode(metal_type);
+          const metalPrefix = metal_type?.replace(/\s/g, "").substring(0, 3).toUpperCase() || "GEN";
+          const finalSku = sku || `${metalPrefix}-${Date.now().toString(36).toUpperCase()}`;
+          const status = stock === 0 ? "Out of Stock" : stock <= 5 ? "Low Stock" : "In Stock";
+          const isImitation = metal_type === "Imitation";
+
+          await addItem("products", {
+            sku: finalSku,
+            barcode,
+            name,
+            category: category || "Other",
+            metal_type: metal_type || "Gold 22K",
+            weight,
+            stock,
+            purchase_price: isImitation ? purchase_price : 0,
+            unit_price,
+            status,
+          });
+          success++;
+        } catch (err) {
+          console.error("Bulk upload row error", err);
+          failed++;
+        }
+      }
+      
+      setBulkResults({ success, failed });
+      toast.success(`Upload complete: ${success} added, ${failed} failed`);
+      queryClient.invalidateQueries({ queryKey: ["products"] });
+      setBulkOpen(false);
+      setBulkFile(null);
+    } catch (err) {
+      console.error("Error parsing file:", err);
+      toast.error('Failed to parse file. Please ensure it is a valid Excel or CSV file.');
+    } finally {
+      setBulkLoading(false);
+    }
+  };
+  reader.readAsArrayBuffer(bulkFile);
+};
   const addProductMutation = useMutation({
     mutationFn: async (newProduct: Omit<Product, "id">) => addItem("products", newProduct),
     onSuccess: (_id, newProduct) => {
@@ -75,7 +218,7 @@ const Inventory = () => {
   });
 
   const updateProductMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Record<string, any> }) => updateItem("products", id, data),
+    mutationFn: async ({ id, data }: { id: string; data: Partial<Omit<Product, "id">> }) => updateItem("products", id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["products"] });
       queryClient.invalidateQueries({ queryKey: ["pos-products"] });
@@ -99,7 +242,7 @@ const Inventory = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const stock = parseInt(formData.stock);
+    const stock = parseInt(formData.stock, 10);
     const status = stock === 0 ? "Out of Stock" : stock <= 5 ? "Low Stock" : "In Stock";
     const isImitation = formData.metal_type === "Imitation";
 
@@ -107,8 +250,11 @@ const Inventory = () => {
       updateProductMutation.mutate({
         id: editProduct.id,
         data: {
-          name: formData.name, category: formData.category, metal_type: formData.metal_type,
-          weight: parseFloat(formData.weight), stock,
+          name: formData.name,
+          category: formData.category,
+          metal_type: formData.metal_type,
+          weight: parseFloat(formData.weight),
+          stock,
           purchase_price: isImitation ? parseFloat(formData.purchase_price) : 0,
           unit_price: isImitation ? parseFloat(formData.unit_price) : 0,
           status,
@@ -119,8 +265,13 @@ const Inventory = () => {
       const metalPrefix = formData.metal_type.replace(/\s/g, "").substring(0, 3).toUpperCase();
       const sku = `${metalPrefix}-${Date.now().toString(36).toUpperCase()}`;
       addProductMutation.mutate({
-        sku, barcode, name: formData.name, category: formData.category, metal_type: formData.metal_type,
-        weight: parseFloat(formData.weight), stock,
+        sku,
+        barcode,
+        name: formData.name,
+        category: formData.category,
+        metal_type: formData.metal_type,
+        weight: parseFloat(formData.weight),
+        stock,
         purchase_price: isImitation ? parseFloat(formData.purchase_price) : 0,
         unit_price: isImitation ? parseFloat(formData.unit_price) : 0,
         status,
@@ -190,9 +341,14 @@ const Inventory = () => {
             </h1>
             <p className="text-muted-foreground mt-1 text-sm sm:text-base">Track stock, manage products, and monitor inventory value</p>
           </div>
-          <Button variant="gold" className="shrink-0 w-full sm:w-auto" onClick={() => { setFormData(emptyForm); setEditProduct(null); setIsDialogOpen(true); }}>
-            <Plus className="w-4 h-4 mr-2" />Add Product
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setBulkOpen(true)}>
+              <Upload className="w-4 h-4 mr-2" /> Bulk Upload
+            </Button>
+            <Button variant="gold" onClick={() => { setFormData(emptyForm); setEditProduct(null); setIsDialogOpen(true); }}>
+              <Plus className="w-4 h-4 mr-2" />Add Product
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -224,7 +380,9 @@ const Inventory = () => {
                   <SelectItem value="Imitation">Imitation</SelectItem>
                 </SelectContent>
               </Select>
-              <Button variant="outline" size="icon" className="shrink-0 h-9 w-9 sm:h-10 sm:w-10"><Download className="w-4 h-4" /></Button>
+              <Button variant="outline" size="icon" className="shrink-0 h-9 w-9 sm:h-10 sm:w-10" onClick={exportToExcel}>
+                <Download className="w-4 h-4" />
+              </Button>
             </div>
           </div>
         </CardHeader>
@@ -280,17 +438,20 @@ const Inventory = () => {
                             <MoreHorizontal className="w-4 h-4" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openEdit(item)}>
-                            <Pencil className="w-3.5 h-3.5 mr-2" /> Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setBarcodeProduct(item)}>
-                            <QrCode className="w-3.5 h-3.5 mr-2" /> Barcode
-                          </DropdownMenuItem>
-                          <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setDeleteConfirm(item)}>
-                            <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
+                       <DropdownMenuContent align="end">
+  <DropdownMenuItem onClick={() => openEdit(item)}>
+    <Pencil className="w-3.5 h-3.5 mr-2" /> Edit
+  </DropdownMenuItem>
+  <DropdownMenuItem onClick={() => setBarcodeProduct(item)}>
+    <QrCode className="w-3.5 h-3.5 mr-2" /> Barcode
+  </DropdownMenuItem>
+  <DropdownMenuItem onClick={() => setAdjustProduct(item)}>
+    <Package className="w-3.5 h-3.5 mr-2" /> Adjust Stock
+  </DropdownMenuItem>
+  <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setDeleteConfirm(item)}>
+    <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete
+  </DropdownMenuItem>
+</DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
                   </TableRow>
@@ -347,7 +508,39 @@ const Inventory = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation */}
+      {/* Bulk Upload Dialog */}
+      <Dialog open={bulkOpen} onOpenChange={(open) => { setBulkOpen(open); if (!open) { setBulkFile(null); setBulkResults({ success: 0, failed: 0 }); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Bulk Upload Products</DialogTitle>
+            <DialogDescription>
+              Upload an Excel (.xlsx, .xls) or CSV file. The first row must contain column headers.
+              <br />
+              <a href="/templates/product-import-template.xlsx" download className="text-primary text-sm underline mt-2 inline-block">
+                Download sample template
+              </a>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input type="file" accept=".xlsx, .xls, .csv" onChange={(e) => setBulkFile(e.target.files?.[0] || null)} />
+            {bulkResults.success > 0 && (
+              <p className="text-sm text-green-600">✅ {bulkResults.success} products added</p>
+            )}
+            {bulkResults.failed > 0 && (
+              <p className="text-sm text-red-600">❌ {bulkResults.failed} rows failed</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkOpen(false)}>Cancel</Button>
+            <Button onClick={handleBulkUpload} disabled={!bulkFile || bulkLoading}>
+              {bulkLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
+              Upload
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
       <Dialog open={!!deleteConfirm} onOpenChange={(open) => !open && setDeleteConfirm(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
@@ -378,6 +571,17 @@ const Inventory = () => {
           onOpenChange={(open) => !open && setBarcodeProduct(null)}
         />
       )}
+
+      {/* Stock Adjustment Dialog */}
+{adjustProduct && (
+  <StockAdjustment
+    productId={adjustProduct.id}
+    productName={adjustProduct.name}
+    currentStock={adjustProduct.stock}
+    open={!!adjustProduct}
+    onOpenChange={(open) => !open && setAdjustProduct(null)}
+  />
+)}
     </DashboardLayout>
   );
 };

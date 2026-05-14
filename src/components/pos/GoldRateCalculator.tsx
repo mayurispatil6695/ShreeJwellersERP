@@ -23,7 +23,6 @@ import {
   Gem,
   IndianRupee,
   Percent,
-  
   ShoppingCart,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -35,13 +34,12 @@ const PURITY_MAP: Record<string, { value: number; label: string }> = {
   "14K": { value: 0.585, label: "14K (58.5%)" },
 };
 
-// Maps inventory metal_type strings to purity keys
 function metalTypeToPurity(metalType: string): string {
   if (metalType.includes("24K")) return "24K";
   if (metalType.includes("22K")) return "22K";
   if (metalType.includes("18K")) return "18K";
   if (metalType.includes("14K")) return "14K";
-  return "22K"; // default
+  return "22K";
 }
 
 export interface ProductForCalc {
@@ -92,18 +90,12 @@ const calcItemResult = (item: CalcItem) => {
   const makingAmt = parseFloat(item.makingCharges) || 0;
   const additional = parseFloat(item.additionalCharges) || 0;
 
-  // Gold value (rate × weight)
   const goldValue = rate * weight;
-
-  // Making charges
   const makingTotal =
     item.makingType === "percent"
       ? (goldValue * makingAmt) / 100
       : makingAmt * weight;
-
-  // Total without GST — GST is applied once in the final POS billing
   const total = goldValue + makingTotal + additional;
-
   return { goldValue, makingTotal, additional, total };
 };
 
@@ -111,11 +103,8 @@ const fmt = (n: number) =>
   n.toLocaleString("en-IN", { maximumFractionDigits: 2 });
 
 interface GoldRateCalculatorProps {
-  /** Product auto-filled from inventory when user clicks "Calculate" */
   selectedProduct?: ProductForCalc | null;
-  /** Called when user wants to add calculated price to cart */
   onAddToCart?: (result: CalcResult) => void;
-  /** Called after product is consumed so parent can clear it */
   onProductConsumed?: () => void;
 }
 
@@ -127,7 +116,6 @@ export function GoldRateCalculator({
   const [items, setItems] = useState<CalcItem[]>([defaultItem()]);
   const [copied, setCopied] = useState(false);
 
-  // Auto-fill when a product is selected from inventory
   useEffect(() => {
     if (selectedProduct) {
       const purity = metalTypeToPurity(selectedProduct.metal_type);
@@ -142,7 +130,6 @@ export function GoldRateCalculator({
         makingCharges: "",
         additionalCharges: "",
       };
-      // Replace first item or add as new
       setItems((prev) => {
         const first = prev[0];
         if (first && !first.goldRate && !first.weight) {
@@ -204,7 +191,6 @@ export function GoldRateCalculator({
         purity: item.purity,
         makingCharges: res.makingTotal,
       });
-      // Remove item from calculator after adding to bill
       setItems((prev) => {
         const remaining = prev.filter((i) => i.id !== item.id);
         return remaining.length === 0 ? [defaultItem()] : remaining;
@@ -213,9 +199,6 @@ export function GoldRateCalculator({
     [onAddToCart]
   );
 
-  // Quick rates from first item's gold rate
-  const baseRate = parseFloat(items[0]?.goldRate || "0") || 0;
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -223,8 +206,6 @@ export function GoldRateCalculator({
       transition={{ duration: 0.5 }}
       className="space-y-4"
     >
-
-      {/* Calculator Items */}
       <AnimatePresence mode="popLayout">
         {items.map((item, idx) => {
           const res = calcItemResult(item);
@@ -237,7 +218,7 @@ export function GoldRateCalculator({
               exit={{ opacity: 0, x: -100 }}
               layout
             >
-              <Card className="border-primary/10 bg-card/80 backdrop-blur-sm overflow-hidden">
+              <Card className="border-primary/10 bg-card/80 backdrop-blur-sm overflow-hidden w-full min-w-0">
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <CardTitle className="flex items-center gap-2 text-sm">
@@ -265,9 +246,10 @@ export function GoldRateCalculator({
                     )}
                   </div>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  {/* Inputs Row 1 */}
-                  <div className="grid grid-cols-2 gap-3">
+
+                <CardContent className="space-y-4 overflow-hidden">
+                  {/* Row 1: Gold Rate & Weight */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label className="flex items-center gap-1.5 text-xs">
                         <IndianRupee className="h-3 w-3 text-primary" />
@@ -280,7 +262,7 @@ export function GoldRateCalculator({
                         onChange={(e) =>
                           updateItem(item.id, { goldRate: e.target.value })
                         }
-                        className="h-9 text-sm"
+                        className="h-9 text-sm w-full"
                       />
                     </div>
                     <div className="space-y-1.5">
@@ -300,30 +282,27 @@ export function GoldRateCalculator({
                         onChange={(e) =>
                           updateItem(item.id, { weight: e.target.value })
                         }
-                        className="h-9 text-sm"
+                        className="h-9 text-sm w-full"
                       />
                     </div>
                   </div>
 
-
-                  {/* Making Charges */}
-                  <div className="grid grid-cols-2 gap-3">
+                  {/* Row 2: Making Charges & Additional Charges - FIXED OVERLAP */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label className="flex items-center gap-1.5 text-xs">
                         <Percent className="h-3 w-3 text-primary" />
                         Making Charges
                       </Label>
-                      <div className="flex gap-1.5">
+                      <div className="flex flex-wrap items-center gap-2 min-w-0">
                         <Input
                           type="number"
                           placeholder="0"
                           value={item.makingCharges}
                           onChange={(e) =>
-                            updateItem(item.id, {
-                              makingCharges: e.target.value,
-                            })
+                            updateItem(item.id, { makingCharges: e.target.value })
                           }
-                          className="h-9 text-sm"
+                          className="h-9 text-sm flex-1 min-w-[100px]"
                         />
                         <Select
                           value={item.makingType}
@@ -331,7 +310,7 @@ export function GoldRateCalculator({
                             updateItem(item.id, { makingType: v })
                           }
                         >
-                          <SelectTrigger className="h-9 w-16 text-xs px-2">
+                          <SelectTrigger className="h-9 w-[72px] shrink-0 text-xs px-2">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -351,11 +330,9 @@ export function GoldRateCalculator({
                         placeholder="0"
                         value={item.additionalCharges}
                         onChange={(e) =>
-                          updateItem(item.id, {
-                            additionalCharges: e.target.value,
-                          })
+                          updateItem(item.id, { additionalCharges: e.target.value })
                         }
-                        className="h-9 text-sm"
+                        className="h-9 text-sm w-full"
                       />
                     </div>
                   </div>
@@ -380,10 +357,10 @@ export function GoldRateCalculator({
                           <span>Total (excl. GST)</span>
                           <span className="text-primary">₹{fmt(res.total)}</span>
                         </div>
-                        <p className="text-[10px] text-muted-foreground mt-0.5">GST (3%) will be added in final bill</p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          GST (3%) will be added in final bill
+                        </p>
                       </div>
-
-                      {/* Add to Bill button — always show when onAddToCart is available */}
                       {onAddToCart && (
                         <motion.div
                           initial={{ opacity: 0, y: 5 }}
@@ -412,21 +389,11 @@ export function GoldRateCalculator({
 
       {/* Actions */}
       <div className="flex flex-wrap gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={addItem}
-          className="text-xs"
-        >
+        <Button variant="outline" size="sm" onClick={addItem} className="text-xs">
           <Plus className="h-3.5 w-3.5 mr-1" />
           Add Item
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={resetAll}
-          className="text-xs"
-        >
+        <Button variant="outline" size="sm" onClick={resetAll} className="text-xs">
           <RotateCcw className="h-3.5 w-3.5 mr-1" />
           Reset
         </Button>

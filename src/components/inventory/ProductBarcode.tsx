@@ -47,7 +47,7 @@ export function ProductBarcodeDialog({
           <div class="label">
             ${content.innerHTML}
           </div>
-          <script>window.onload = () => { window.print(); window.close(); }<\/script>
+          <script>window.onload = () => { window.print(); window.close(); }</script>
         </body>
       </html>
     `);

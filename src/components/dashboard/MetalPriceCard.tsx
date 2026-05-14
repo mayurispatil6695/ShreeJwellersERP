@@ -1,129 +1,100 @@
-import { useState, useCallback } from "react";
+import { useState, useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TrendingUp, TrendingDown, RefreshCw, Loader2 } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
-import { supabase } from "@/integrations/supabase/client";
-import { useQuery } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
 
-interface MetalPrice {
-  name: string;
-  price: number;
-  change: number;
-}
-
-const fallbackPrices: MetalPrice[] = [
-  { name: "Gold 24K", price: 7250, change: 0.45 },
-  { name: "Gold 22K", price: 6640, change: 0.42 },
-  { name: "Silver", price: 85.50, change: -0.23 },
-  { name: "Platinum", price: 3120, change: 0.18 },
-];
-
-async function fetchMetalPrices(): Promise<{ prices: MetalPrice[]; updated_at: string }> {
-  const { data, error } = await supabase.functions.invoke("metal-prices");
-  if (error) throw error;
-  return {
-    prices: data?.prices || fallbackPrices,
-    updated_at: data?.updated_at || new Date().toISOString(),
-  };
-}
-
-function timeAgo(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins} min ago`;
-  const hrs = Math.floor(mins / 60);
-  return `${hrs}h ago`;
-}
+const METAL_API_KEY = "721660a5e9e391dbdbe2065449083f4d";
 
 export function MetalPriceCard() {
-  const { data, isLoading, refetch, isFetching } = useQuery({
-    queryKey: ["metal-prices"],
-    queryFn: fetchMetalPrices,
-    refetchInterval: 5 * 60 * 1000, // auto-refresh every 5 min
-    staleTime: 2 * 60 * 1000,
-    placeholderData: { prices: fallbackPrices, updated_at: new Date().toISOString() },
-  });
+  const [prices, setPrices] = useState([
+    { name: "Gold 24K", price: 7250, change: 0 },
+    { name: "Silver", price: 85.5, change: 0 },
+    { name: "Platinum", price: 3120, change: 0 },
+  ]);
+  const [loading, setLoading] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [error, setError] = useState(false);
 
-  const prices = data?.prices || fallbackPrices;
-  const updatedAt = data?.updated_at || new Date().toISOString();
+  const fetchPrices = async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      const response = await fetch(
+        `https://api.metalpriceapi.com/v1/latest?api_key=${METAL_API_KEY}&base=INR&currencies=XAU,XAG,XPT`
+      );
+      const data = await response.json();
+      console.log("API Response:", data);
 
-  const handleRefresh = useCallback(() => {
-    refetch();
-  }, [refetch]);
+      // Extract rates – the API uses keys: INRXAU, INRXAG, INRXPIT
+      const goldTroyOz = data.rates?.INRXAU;
+      const silverTroyOz = data.rates?.INRXAG;
+      const platinumTroyOz = data.rates?.INRXPIT;  // Note: key is INRXPIT (not INRXPIT)
+
+      const newPrices = [...prices];
+
+      if (goldTroyOz) {
+        const goldPerGram = goldTroyOz / 31.1034768;
+        newPrices[0] = { ...newPrices[0], price: Math.round(goldPerGram) };
+      }
+      if (silverTroyOz) {
+        const silverPerGram = silverTroyOz / 31.1034768;
+        newPrices[1] = { ...newPrices[1], price: parseFloat(silverPerGram.toFixed(2)) };
+      }
+      if (platinumTroyOz) {
+        const platinumPerGram = platinumTroyOz / 31.1034768;
+        newPrices[2] = { ...newPrices[2], price: Math.round(platinumPerGram) };
+      }
+
+      setPrices(newPrices);
+      setLastUpdated(new Date());
+    } catch (err) {
+      console.error("Failed to fetch metal prices", err);
+      setError(true);
+      // Keep existing (fallback) prices
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchPrices();
+    const interval = setInterval(fetchPrices, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const timeAgo = () => {
+    const diff = Math.floor((new Date().getTime() - lastUpdated.getTime()) / 1000);
+    if (diff < 60) return "just now";
+    if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
+    return `${Math.floor(diff / 3600)}h ago`;
+  };
 
   return (
-    <Card variant="elevated" className="overflow-hidden">
-      <div className="p-4 border-b border-border/50 flex items-center justify-between">
-        <div>
-          <h3 className="font-display font-semibold text-lg">Live Metal Prices</h3>
-          <p className="text-xs text-muted-foreground">
-            {isFetching ? "Updating..." : `Last updated: ${timeAgo(updatedAt)}`}
-          </p>
-        </div>
-        <button
-          onClick={handleRefresh}
-          disabled={isFetching}
-          className="p-2 rounded-lg hover:bg-secondary/50 transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50"
-        >
-          {isFetching ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <RefreshCw className="w-4 h-4" />
-          )}
-        </button>
-      </div>
-      <CardContent className="p-0">
-        <div className="divide-y divide-border/30">
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between pb-2">
+        <CardTitle className="text-sm font-medium">Live Metal Prices</CardTitle>
+        <Button variant="ghost" size="icon" onClick={fetchPrices} disabled={loading}>
+          {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+        </Button>
+      </CardHeader>
+      <CardContent>
+        <p className="text-xs text-muted-foreground mb-2">
+          {error ? "Using fallback rates • " : ""}Last updated: {timeAgo()}
+        </p>
+        <div className="space-y-2">
           {prices.map((metal) => (
-            <div
-              key={metal.name}
-              className="flex items-center justify-between p-4 hover:bg-secondary/20 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <div
-                  className={cn(
-                    "w-3 h-3 rounded-full",
-                    metal.name.includes("Gold")
-                      ? "bg-primary"
-                      : metal.name === "Silver"
-                      ? "bg-silver"
-                      : "bg-platinum"
-                  )}
-                />
-                <span className="font-medium">{metal.name}</span>
-              </div>
-              <div className="flex items-center gap-4">
-                <div className="text-right">
-                  <p
-                    className={cn(
-                      "font-semibold",
-                      metal.name.includes("Gold")
-                        ? "text-primary"
-                        : metal.name === "Silver"
-                        ? "text-silver"
-                        : "text-platinum"
-                    )}
-                  >
-                    ₹{metal.price.toLocaleString("en-IN", { minimumFractionDigits: metal.price < 100 ? 2 : 0 })}
-                    <span className="text-xs text-muted-foreground ml-1">/gram</span>
-                  </p>
-                </div>
-                <div
-                  className={cn(
-                    "flex items-center gap-1 text-sm font-medium px-2 py-0.5 rounded-full",
-                    metal.change >= 0
-                      ? "text-emerald bg-emerald/10"
-                      : "text-ruby bg-ruby/10"
-                  )}
-                >
-                  {metal.change >= 0 ? (
-                    <TrendingUp className="w-3 h-3" />
-                  ) : (
-                    <TrendingDown className="w-3 h-3" />
-                  )}
-                  {Math.abs(metal.change)}%
-                </div>
+            <div key={metal.name} className="flex justify-between items-center">
+              <span className="text-sm">{metal.name}</span>
+              <div className="flex items-center gap-2">
+                <span className="font-semibold">
+                  ₹{metal.price.toLocaleString(undefined, { minimumFractionDigits: metal.price < 100 ? 2 : 0 })}/g
+                </span>
+                {metal.change !== 0 && (
+                  <span className={metal.change > 0 ? "text-green-500" : "text-red-500"}>
+                    {metal.change > 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                    {Math.abs(metal.change).toFixed(2)}%
+                  </span>
+                )}
               </div>
             </div>
           ))}
