@@ -17,7 +17,7 @@ import { format } from "date-fns";
 import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { type ExchangeItem } from "@/components/pos/ExchangeItem";
-
+import { generateReceiptHTML,printViaBrowser,type ReceiptData } from "@/lib/receiptUtils";
 interface SaleItem {
   name: string;
   qty: number;
@@ -45,6 +45,7 @@ interface Sale {
   payment_status?: string;
   doc_type?: "estimate" | "invoice";
   exchange_items?: ExchangeItem[];
+  gold_rate?: number; 
 }
 
 function isImitationSale(sale: Sale & { is_imitation_bill?: boolean }): boolean {
@@ -99,29 +100,36 @@ const Bills = () => {
   };
 
   const handlePrint = () => {
-    if (!printRef.current) return;
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) { toast.error("Pop-up blocked. Please allow pop-ups."); return; }
-    printWindow.document.write(`
-      <html><head><title>Invoice</title>
-      <style>
-        body { font-family: Arial, sans-serif; padding: 24px; color: #111; }
-        .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #c8a45a; padding-bottom: 12px; }
-        .header h1 { font-size: 20px; margin: 0; color: #c8a45a; }
-        .info-row { display: flex; justify-content: space-between; font-size: 13px; padding: 3px 0; }
-        .items-table { width: 100%; border-collapse: collapse; margin: 12px 0; }
-        .items-table th, .items-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #ddd; font-size: 13px; }
-        .items-table th { background: #f5f5f5; font-weight: 600; }
-        .totals { border-top: 2px solid #ddd; padding-top: 8px; }
-        .total-row { display: flex; justify-content: space-between; font-size: 13px; padding: 2px 0; }
-        .grand-total { font-size: 16px; font-weight: bold; color: #c8a45a; border-top: 2px solid #c8a45a; padding-top: 6px; margin-top: 4px; }
-        @media print { body { padding: 0; } }
-      </style></head><body>${printRef.current.innerHTML}</body></html>
-    `);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => { printWindow.print(); printWindow.close(); }, 300);
+  if (!selectedBill) return;
+  // Build ReceiptData from selectedBill
+  const receiptData: ReceiptData = {
+    invoiceNumber: selectedBill.invoice_number,
+    customerName: selectedBill.customer_name || "Walk-in",
+    items: (selectedBill.items || []).map(item => ({
+      name: item.name,
+      qty: item.qty,
+      price: item.unit_price || item.price || 0,
+      weight: item.weight,
+      purity: item.purity,
+      making: 0, // if you have making charges stored, retrieve them
+    })),
+    subtotal: selectedBill.subtotal || 0,
+    tax: selectedBill.tax || 0,
+    total: selectedBill.total || 0,
+    docType: selectedBill.doc_type === "estimate" ? "estimate" : "invoice",
+    goldRate: selectedBill.gold_rate || 0, // you need to store gold_rate in sales
+    exchangeItems: selectedBill.exchange_items || [],
+    paymentBreakdown: {
+      cash: selectedBill.payment_method === "Cash" ? (selectedBill.paid_amount || selectedBill.total) : 0,
+      card: selectedBill.payment_method === "Card" ? (selectedBill.paid_amount || 0) : 0,
+      cheque: 0,
+      online: selectedBill.payment_method === "UPI" ? (selectedBill.paid_amount || 0) : 0,
+    },
+    netPayable: selectedBill.total,
   };
+  printViaBrowser(receiptData);
+};
+ 
 
   const handleExport = (sale: Sale) => {
     const text = generateBillText(sale).replace(/\*/g, "");

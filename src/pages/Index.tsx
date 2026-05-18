@@ -24,6 +24,16 @@ import { useUserData } from "@/hooks/useUserData";
 import { useNotifications } from "@/hooks/useNotifications";
 import { Loader2 } from "lucide-react";
 
+// Define SaleItem interface
+interface SaleItem {
+  name: string;
+  qty: number;
+  unit_price: number;
+  price?: number;
+  weight?: number;
+  purity?: string;
+}
+
 interface Sale {
   id: string;
   total: number;
@@ -31,10 +41,11 @@ interface Sale {
   payment_method: string;
   customer_name: string | null;
   invoice_number: string;
-  items: any;
+  items: SaleItem[];  // fixed: replaced 'any' with SaleItem[]
   status: string;
   is_imitation_bill?: boolean;
 }
+
 interface Product {
   id: string;
   name: string;
@@ -44,7 +55,9 @@ interface Product {
   stock: number;
   weight: number;
   status: string;
+  date_of_birth?: string; // not in product but added for completeness? Actually product doesn't have DOB, but we'll leave as is.
 }
+
 interface Customer {
   id: string;
   name: string;
@@ -52,13 +65,16 @@ interface Customer {
   loyalty_points: number;
   city: string | null;
   created_at: string;
+  date_of_birth?: string | null; // added for birthday check
 }
+
 interface Employee {
   id: string;
   name: string;
   department: string | null;
   is_active: boolean;
 }
+
 interface Investment {
   id: string;
   invested_amount: number;
@@ -70,7 +86,7 @@ interface Investment {
 function isImitationSale(sale: Sale): boolean {
   if (sale.is_imitation_bill) return true;
   const items = Array.isArray(sale.items) ? sale.items : [];
-  return items.some((item: any) => {
+  return items.some((item) => {
     const name = (item.name || "").toLowerCase();
     return name.includes("imitation") || name.includes("artificial") || name.includes("fashion");
   });
@@ -113,13 +129,13 @@ const Index = () => {
     const mm = today.getMonth();
     const dd = today.getDate();
 
-    customers.forEach((c: any) => {
-      if (c.date_of_birth) {
-        const dob = new Date(c.date_of_birth);
+    customers.forEach((customer) => {
+      if (customer.date_of_birth) {
+        const dob = new Date(customer.date_of_birth);
         if (dob.getMonth() === mm && dob.getDate() === dd) {
           createNotification({
             title: "🎂 Birthday Today!",
-            message: `${c.name}'s birthday is today. Send them an offer!`,
+            message: `${customer.name}'s birthday is today. Send them an offer!`,
             type: "birthday",
             priority: "high",
             action_url: "/customers",
@@ -128,19 +144,20 @@ const Index = () => {
       }
     });
 
-    products.forEach((p: any) => {
-      if (Number(p.stock) <= 0) {
+    products.forEach((product) => {
+      const stock = Number(product.stock);
+      if (stock <= 0) {
         createNotification({
           title: "🚫 Out of Stock",
-          message: `${p.name} is out of stock. Reorder immediately.`,
+          message: `${product.name} is out of stock. Reorder immediately.`,
           type: "inventory",
           priority: "high",
           action_url: "/inventory",
         });
-      } else if (Number(p.stock) <= 5) {
+      } else if (stock <= 5) {
         createNotification({
           title: "⚠️ Low Stock Alert",
-          message: `${p.name} has only ${p.stock} units remaining.`,
+          message: `${product.name} has only ${product.stock} units remaining.`,
           type: "inventory",
           priority: "high",
           action_url: "/inventory",
@@ -175,7 +192,7 @@ const Index = () => {
       { title: "Imitation Revenue", value: fmt(imitationRevenue), change: { value: `${imitationSales.length} bills`, positive: imitationRevenue > 0 }, description: "all time", icon: Sparkles, accentColor: "emerald" as const },
       { title: "Today Imitation", value: fmt(todayImitationRevenue), change: { value: `${todayImitationSales.length} sales`, positive: todayImitationRevenue > 0 }, description: "today", icon: Receipt, accentColor: "emerald" as const },
     ];
-  }, [sales, products, customers, employees, investments]);
+  }, [sales, products, customers]);
 
   return (
     <DashboardLayout>
