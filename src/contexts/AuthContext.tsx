@@ -1,5 +1,15 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
-import { User, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut as firebaseSignOut, sendPasswordResetEmail, GoogleAuthProvider, signInWithPopup, updatePassword } from 'firebase/auth';
+import { 
+  User, 
+  onAuthStateChanged, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut as firebaseSignOut, 
+  sendPasswordResetEmail, 
+  GoogleAuthProvider, 
+  signInWithPopup, 
+  updatePassword
+} from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 
 interface AuthContextType {
@@ -11,6 +21,11 @@ interface AuthContextType {
   signInWithGoogle: () => Promise<{ error: Error | null }>;
   resetPassword: (email: string) => Promise<{ error: Error | null }>;
   updateUserPassword: (password: string) => Promise<{ error: Error | null }>;
+}
+
+// Type guard to check if an error is a Firebase Auth error
+function isFirebaseAuthError(error: unknown): error is { code: string; message: string } {
+  return typeof error === 'object' && error !== null && 'code' in error && 'message' in error;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -31,8 +46,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await createUserWithEmailAndPassword(auth, email, password);
       return { error: null };
-    } catch (error: any) {
-      return { error: new Error(error.message) };
+    } catch (error: unknown) {
+      const message = isFirebaseAuthError(error) ? error.message : 'An unknown error occurred';
+      return { error: new Error(message) };
     }
   };
 
@@ -40,12 +56,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await signInWithEmailAndPassword(auth, email, password);
       return { error: null };
-    } catch (error: any) {
-      let message = error.message;
-      if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
-        message = 'Invalid login credentials';
-      } else if (error.code === 'auth/user-not-found') {
-        message = 'No account found with this email';
+    } catch (error: unknown) {
+      let message = 'An unknown error occurred';
+      if (isFirebaseAuthError(error)) {
+        if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+          message = 'Invalid login credentials';
+        } else if (error.code === 'auth/user-not-found') {
+          message = 'No account found with this email';
+        } else {
+          message = error.message;
+        }
       }
       return { error: new Error(message) };
     }
@@ -56,8 +76,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
       return { error: null };
-    } catch (error: any) {
-      return { error: new Error(error.message) };
+    } catch (error: unknown) {
+      const message = isFirebaseAuthError(error) ? error.message : 'An unknown error occurred';
+      return { error: new Error(message) };
     }
   };
 
@@ -69,8 +90,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await sendPasswordResetEmail(auth, email);
       return { error: null };
-    } catch (error: any) {
-      return { error: new Error(error.message) };
+    } catch (error: unknown) {
+      const message = isFirebaseAuthError(error) ? error.message : 'An unknown error occurred';
+      return { error: new Error(message) };
     }
   };
 
@@ -79,8 +101,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!auth.currentUser) throw new Error('No user logged in');
       await updatePassword(auth.currentUser, password);
       return { error: null };
-    } catch (error: any) {
-      return { error: new Error(error.message) };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'An unknown error occurred';
+      return { error: new Error(message) };
     }
   };
 

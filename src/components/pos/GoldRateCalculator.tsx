@@ -60,6 +60,7 @@ export interface CalcResult {
   weight: number;
   purity: string;
   makingCharges: number;
+   goldRate: number;   // <-- add this line
 }
 
 interface CalcItem {
@@ -190,6 +191,7 @@ export function GoldRateCalculator({
         weight: parseFloat(item.weight) || 0,
         purity: item.purity,
         makingCharges: res.makingTotal,
+        goldRate: parseFloat(item.goldRate) || 0,   // <-- add this line
       });
       setItems((prev) => {
         const remaining = prev.filter((i) => i.id !== item.id);

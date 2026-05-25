@@ -7,7 +7,7 @@ import { Package, Search, Filter, Loader2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useQuery } from "@tanstack/react-query";
-import { employeeGetAll } from "@/lib/employeeFirebaseProxy";
+import { useUserData } from "@/hooks/useUserData";
 
 interface Product {
   id: string;
@@ -25,10 +25,11 @@ interface Product {
 const EmployeeInventory = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [metalFilter, setMetalFilter] = useState("all");
+  const { getAll } = useUserData();
 
   const { data: products = [], isLoading } = useQuery({
     queryKey: ["emp-products"],
-    queryFn: () => employeeGetAll<Product>("products"),
+    queryFn: () => getAll<Product>("products", true), // shared = true
   });
 
   const filteredProducts = products.filter((p) => {
@@ -41,7 +42,8 @@ const EmployeeInventory = () => {
       (metalFilter === "Gold" && p.metal_type?.toLowerCase().includes("gold")) ||
       (metalFilter === "Silver" && p.metal_type?.toLowerCase().includes("silver")) ||
       (metalFilter === "Diamond" && p.metal_type?.toLowerCase().includes("diamond")) ||
-      (metalFilter === "Platinum" && p.metal_type?.toLowerCase().includes("platinum"));
+      (metalFilter === "Platinum" && p.metal_type?.toLowerCase().includes("platinum")) ||
+      (metalFilter === "Imitation" && p.metal_type?.toLowerCase().includes("imitation"));
     return matchesSearch && matchesMetal;
   });
 

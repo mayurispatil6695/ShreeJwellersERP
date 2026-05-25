@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState,useMemo } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -73,10 +73,9 @@ const Inventory = () => {
   const { createNotification } = useNotifications();
 
   const { data: products = [], isLoading } = useQuery({
-    queryKey: ["products"],
-    queryFn: () => getAll<Product>("products"),
-  });
-
+  queryKey: ["products"],
+  queryFn: () => getAll<Product>("products", true),  // 👈 shared = true
+});
   // Export to Excel
   const exportToExcel = () => {
     const exportData = products.map(p => ({
@@ -170,7 +169,7 @@ const Inventory = () => {
             purchase_price: isImitation ? purchase_price : 0,
             unit_price,
             status,
-          });
+          },true);
           success++;
         } catch (err) {
           console.error("Bulk upload row error", err);
@@ -193,7 +192,7 @@ const Inventory = () => {
   reader.readAsArrayBuffer(bulkFile);
 };
   const addProductMutation = useMutation({
-    mutationFn: async (newProduct: Omit<Product, "id">) => addItem("products", newProduct),
+   mutationFn: async (newProduct: Omit<Product, "id">) => addItem("products", newProduct, true),
     onSuccess: (_id, newProduct) => {
       queryClient.invalidateQueries({ queryKey: ["products"] });
       toast.success("Product added successfully!");
@@ -202,6 +201,7 @@ const Inventory = () => {
         message: `${newProduct.name} has been added to inventory.`,
         type: "inventory",
         priority: "low",
+        action_url: "/inventory",
       });
       if (newProduct.stock <= 5) {
         createNotification({
@@ -209,6 +209,7 @@ const Inventory = () => {
           message: `${newProduct.name} has only ${newProduct.stock} units in stock.`,
           type: "inventory",
           priority: "high",
+          action_url: "/inventory",   // 👈 add this
         });
       }
       setIsDialogOpen(false);
@@ -218,7 +219,7 @@ const Inventory = () => {
   });
 
   const updateProductMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<Omit<Product, "id">> }) => updateItem("products", id, data),
+    mutationFn: async ({ id, data }: { id: string; data: Partial<Omit<Product, "id">> }) => updateItem("products", id, data,true),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["products"] });
       queryClient.invalidateQueries({ queryKey: ["pos-products"] });
@@ -230,7 +231,7 @@ const Inventory = () => {
   });
 
   const deleteProductMutation = useMutation({
-    mutationFn: async (id: string) => deleteItem("products", id),
+    mutationFn: async (id: string) => deleteItem("products", id, true),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["products"] });
       queryClient.invalidateQueries({ queryKey: ["pos-products"] });
@@ -312,16 +313,18 @@ const Inventory = () => {
       (metalFilter === "Imitation" && p.metal_type?.toLowerCase().includes("imitation"));
     return matchesSearch && matchesMetal;
   });
-
-  const stats = {
-    totalProducts: products.length,
-    totalValue: products.reduce((acc, p) => acc + (p.unit_price || 0) * (p.stock || 0), 0),
-    totalCost: products.reduce((acc, p) => acc + (p.purchase_price || 0) * (p.stock || 0), 0),
-    lowStock: products.filter((p) => p.status === "Low Stock").length,
-    outOfStock: products.filter((p) => p.status === "Out of Stock").length,
-  };
-  const totalProfit = stats.totalValue - stats.totalCost;
-
+const filteredStats = useMemo(() => {
+  const totalWeight = filteredProducts.reduce((sum, p) => sum + (p.weight || 0), 0);
+  const totalProducts = filteredProducts.length;
+  const totalStock = filteredProducts.reduce((sum, p) => sum + (p.stock || 0), 0);
+  const totalValue = filteredProducts.reduce((sum, p) => sum + (p.unit_price || 0) * (p.stock || 0), 0);
+  const totalCost = filteredProducts.reduce((sum, p) => sum + (p.purchase_price || 0) * (p.stock || 0), 0);
+  const totalProfit = totalValue - totalCost;
+  // ✅ Use stock value, not the stored status field
+  const lowStock = filteredProducts.filter(p => p.stock > 0 && p.stock <= 5).length;
+  const outOfStock = filteredProducts.filter(p => p.stock === 0).length;
+  return { totalWeight, totalProducts, totalStock, totalValue, totalCost, totalProfit, lowStock, outOfStock };
+}, [filteredProducts]);
   const formatCurrency = (value: number) => {
     if (value >= 10000000) return `₹${(value / 10000000).toFixed(1)}Cr`;
     if (value >= 100000) return `₹${(value / 100000).toFixed(1)}L`;
@@ -352,13 +355,67 @@ const Inventory = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 mb-6">
-        <Card variant="stat"><CardContent className="pt-4 sm:pt-6 px-3 sm:px-6"><p className="text-xs sm:text-sm text-muted-foreground">Total Products</p><p className="text-xl sm:text-2xl font-bold text-primary">{stats.totalProducts}</p></CardContent></Card>
-        <Card variant="stat"><CardContent className="pt-4 sm:pt-6 px-3 sm:px-6"><p className="text-xs sm:text-sm text-muted-foreground">Selling Value</p><p className="text-xl sm:text-2xl font-bold">{formatCurrency(stats.totalValue)}</p></CardContent></Card>
-        <Card variant="stat"><CardContent className="pt-4 sm:pt-6 px-3 sm:px-6"><p className="text-xs sm:text-sm text-muted-foreground">Cost Value</p><p className="text-xl sm:text-2xl font-bold text-muted-foreground">{formatCurrency(stats.totalCost)}</p></CardContent></Card>
-        <Card variant="stat"><CardContent className="pt-4 sm:pt-6 px-3 sm:px-6"><p className="text-xs sm:text-sm text-muted-foreground">Profit Margin</p><p className="text-xl sm:text-2xl font-bold text-emerald-500">{formatCurrency(totalProfit)}</p></CardContent></Card>
-        <Card variant="stat"><CardContent className="pt-4 sm:pt-6 px-3 sm:px-6"><p className="text-xs sm:text-sm text-muted-foreground">Low / Out</p><p className="text-xl sm:text-2xl font-bold text-destructive">{stats.lowStock} / {stats.outOfStock}</p></CardContent></Card>
-      </div>
+     <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 sm:gap-4 mb-6">
+  {/* Always show Total Weight and Product Count */}
+  <Card variant="stat">
+    <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
+      <p className="text-xs sm:text-sm text-muted-foreground">Total Weight</p>
+      <p className="text-xl sm:text-2xl font-bold text-primary">{filteredStats.totalWeight.toFixed(2)}g</p>
+    </CardContent>
+  </Card>
+  <Card variant="stat">
+    <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
+      <p className="text-xs sm:text-sm text-muted-foreground">Product Count</p>
+      <p className="text-xl sm:text-2xl font-bold text-primary">{filteredStats.totalProducts}</p>
+    </CardContent>
+  </Card>
+
+  {/* For Gold or Silver: show Total Stock instead of financial cards */}
+  {metalFilter === "Gold" || metalFilter === "Silver" ? (
+    <>
+      <Card variant="stat">
+        <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
+          <p className="text-xs sm:text-sm text-muted-foreground">Total Stock</p>
+          <p className="text-xl sm:text-2xl font-bold text-primary">{filteredStats.totalStock}</p>
+        </CardContent>
+      </Card>
+      <Card variant="stat">
+        <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
+          <p className="text-xs sm:text-sm text-muted-foreground">Low / Out</p>
+          <p className="text-xl sm:text-2xl font-bold text-destructive">{filteredStats.lowStock} / {filteredStats.outOfStock}</p>
+        </CardContent>
+      </Card>
+    </>
+  ) : (
+    // For All Metals or Imitation: show full financial cards
+    <>
+      <Card variant="stat">
+        <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
+          <p className="text-xs sm:text-sm text-muted-foreground">Selling Value</p>
+          <p className="text-xl sm:text-2xl font-bold">{formatCurrency(filteredStats.totalValue)}</p>
+        </CardContent>
+      </Card>
+      <Card variant="stat">
+        <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
+          <p className="text-xs sm:text-sm text-muted-foreground">Cost Value</p>
+          <p className="text-xl sm:text-2xl font-bold text-muted-foreground">{formatCurrency(filteredStats.totalCost)}</p>
+        </CardContent>
+      </Card>
+      <Card variant="stat">
+        <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
+          <p className="text-xs sm:text-sm text-muted-foreground">Profit Margin</p>
+          <p className="text-xl sm:text-2xl font-bold text-emerald-500">{formatCurrency(filteredStats.totalProfit)}</p>
+        </CardContent>
+      </Card>
+      <Card variant="stat">
+        <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
+          <p className="text-xs sm:text-sm text-muted-foreground">Low / Out</p>
+          <p className="text-xl sm:text-2xl font-bold text-destructive">{filteredStats.lowStock} / {filteredStats.outOfStock}</p>
+        </CardContent>
+      </Card>
+    </>
+  )}
+</div>
 
       <Card variant="elevated">
         <CardHeader className="pb-3">
@@ -429,7 +486,9 @@ const Inventory = () => {
                       ) : <span className="text-muted-foreground text-xs">—</span>}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={item.status === "In Stock" ? "default" : item.status === "Low Stock" ? "secondary" : "destructive"} className="text-xs whitespace-nowrap">{item.status}</Badge>
+                      <Badge variant={item.stock === 0 ? "destructive" : item.stock <= 5 ? "secondary" : "default"} className="text-xs whitespace-nowrap">
+  {item.stock === 0 ? "Out of Stock" : item.stock <= 5 ? "Low Stock" : "In Stock"}
+</Badge>
                     </TableCell>
                     <TableCell className="text-center">
                       <DropdownMenu>

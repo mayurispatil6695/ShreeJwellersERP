@@ -12,10 +12,18 @@ import { Textarea } from "@/components/ui/textarea";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useUserData } from "@/hooks/useUserData";
-import emailjs from "@emailjs/browser";
 
 interface Campaign {
   id: string;
+  name: string;
+  type: string;
+  status: string;
+  sent_count: number;
+  opened_count: number;
+  converted_count: number;
+}
+
+interface CampaignInput {
   name: string;
   type: string;
   status: string;
@@ -32,6 +40,13 @@ interface Customer {
   total_purchases: number;
   city: string | null;
   date_of_birth: string | null;
+}
+
+interface SegmentCriteria {
+  minPurchase: string;
+  city: string;
+  hasEmail: boolean;
+  hasPhone: boolean;
 }
 
 const Marketing = () => {
@@ -58,7 +73,7 @@ const Marketing = () => {
   const [sendingPush, setSendingPush] = useState(false);
 
   const [segmentDialogOpen, setSegmentDialogOpen] = useState(false);
-  const [segmentCriteria, setSegmentCriteria] = useState({ minPurchase: "", city: "", hasEmail: false, hasPhone: false });
+  const [segmentCriteria, setSegmentCriteria] = useState<SegmentCriteria>({ minPurchase: "", city: "", hasEmail: false, hasPhone: false });
   const [segmentedCustomers, setSegmentedCustomers] = useState<Customer[]>([]);
   const [segmentLoading, setSegmentLoading] = useState(false);
 
@@ -74,8 +89,16 @@ const Marketing = () => {
   });
 
   const addCampaignMutation = useMutation({
-    mutationFn: async (data: any) => {
-      return addItem("campaigns", { ...data, sent_count: 0, opened_count: 0, converted_count: 0 });
+    mutationFn: async (data: Omit<CampaignInput, 'sent_count' | 'opened_count' | 'converted_count'>) => {
+      const campaignData: CampaignInput = {
+        ...data,
+        sent_count: 0,
+        opened_count: 0,
+        converted_count: 0,
+      };
+      // Spread creates a plain object that satisfies Record<string, unknown>
+      const id = await addItem("campaigns", { ...campaignData });
+      return id;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["campaigns"] });
@@ -83,7 +106,7 @@ const Marketing = () => {
       setIsDialogOpen(false);
       setFormData({ name: "", type: "Email", status: "Draft" });
     },
-    onError: (error: any) => toast.error("Failed to create campaign: " + error.message),
+    onError: (error: Error) => toast.error("Failed to create campaign: " + error.message),
   });
 
   const activateCampaignMutation = useMutation({
@@ -92,13 +115,21 @@ const Marketing = () => {
       const sentCount = Math.floor(Math.random() * 2000) + 500;
       const openedCount = Math.floor(sentCount * 0.65);
       const convertedCount = Math.floor(openedCount * 0.1);
-      await updateItem("campaigns", campaignId, { status: "Active", sent_count: sentCount, opened_count: openedCount, converted_count: convertedCount });
+      // Spread to create plain object
+      await updateItem("campaigns", campaignId, {
+        ...{
+          status: "Active",
+          sent_count: sentCount,
+          opened_count: openedCount,
+          converted_count: convertedCount,
+        },
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["campaigns"] });
       toast.success("Campaign activated!");
     },
-    onError: (error: any) => toast.error("Failed to activate campaign: " + error.message),
+    onError: (error: Error) => toast.error("Failed to activate campaign: " + error.message),
   });
 
   // EmailJS integration (requires setup – see notes below)
@@ -115,17 +146,9 @@ const Marketing = () => {
     }
     setSendingEmail(true);
     try {
-      // Initialize EmailJS if not already done
-      // You need to add your EmailJS public key in .env: VITE_EMAILJS_PUBLIC_KEY
-      if (!emailjs.init) {
-        await import('@emailjs/browser');
-      }
-      // For demo, we'll send a test email to the first customer and show a toast
-      // In production, you would loop or use a backend.
-      // For simplicity here, we'll simulate sending to all.
+      // For demo, we'll simulate sending to all.
       toast.loading(`Sending to ${customersWithEmail.length} customers...`, { duration: 2000 });
-      // Actually send via EmailJS (you need to set up template and service ID)
-      // For now, simulate success
+      // Simulate success
       setTimeout(() => {
         toast.success(`Email blast sent to ${customersWithEmail.length} customers!`);
         setEmailDialogOpen(false);
@@ -133,7 +156,8 @@ const Marketing = () => {
         setEmailContent("");
       }, 1500);
     } catch (error) {
-      toast.error("Failed to send emails");
+      const message = error instanceof Error ? error.message : "Failed to send emails";
+      toast.error(message);
     } finally {
       setSendingEmail(false);
     }

@@ -6,6 +6,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useIsMobile } from "@/hooks/use-mobile";
 import logoImg from '@/assets/logo.png';
 import {
+  RotateCcw,
   LayoutDashboard,
   ShoppingCart,
   Package,
@@ -44,6 +45,7 @@ const mainNavItems: NavItem[] = [
   { icon: Users, label: "Customers", href: "/customers" },
   { icon: Truck, label: "Suppliers", href: "/suppliers" },
   { icon: ShoppingCart, label: "Purchase Orders", href: "/purchase-orders" },
+  { icon: RotateCcw, label: "Exchange Items", href: "/exchange-dashboard" },
   { icon: TrendingUp, label: "Investments", href: "/investments" },
   { icon: Megaphone, label: "Marketing", href: "/marketing" },
 
@@ -74,7 +76,7 @@ export function Sidebar() {
         <div className="flex items-center gap-3">
           <img
             src={logoImg}
-            alt="Shree Jewellers"
+            alt="Shree Jewel ERP"
             className={cn(
               "shrink-0 object-contain",
               collapsed && !mobile ? "h-9 w-9" : "h-10 w-10"
@@ -82,7 +84,7 @@ export function Sidebar() {
           />
           {(!collapsed || mobile) && (
             <div className="animate-fade-in">
-              <h1 className="font-display text-lg font-bold text-gradient-gold">Shree</h1>
+              <h1 className="font-display text-lg font-bold text-gradient-gold">Shree </h1>
               <p className="text-xs text-muted-foreground -mt-0.5">Jewellers ERP</p>
             </div>
           )}
