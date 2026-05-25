@@ -41,7 +41,7 @@ interface Sale {
   payment_method: string;
   customer_name: string | null;
   invoice_number: string;
-  items: SaleItem[];  // fixed: replaced 'any' with SaleItem[]
+  items: SaleItem[];
   status: string;
   is_imitation_bill?: boolean;
 }
@@ -55,7 +55,7 @@ interface Product {
   stock: number;
   weight: number;
   status: string;
-  date_of_birth?: string; // not in product but added for completeness? Actually product doesn't have DOB, but we'll leave as is.
+  date_of_birth?: string;
 }
 
 interface Customer {
@@ -65,7 +65,7 @@ interface Customer {
   loyalty_points: number;
   city: string | null;
   created_at: string;
-  date_of_birth?: string | null; // added for birthday check
+  date_of_birth?: string | null;
 }
 
 interface Employee {
@@ -217,20 +217,20 @@ const Index = () => {
             ))}
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-6 mb-6">
-            <div className="xl:col-span-2">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mb-6">
+            <div className="lg:col-span-2">
               <SalesChart sales={sales} />
             </div>
             <MetalPriceCard />
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6 mb-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6">
             <BusinessHealth sales={sales} products={products} customers={customers} investments={investments} />
             <CustomerInsights customers={customers} sales={sales} />
           </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-6">
-            <div className="xl:col-span-2">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+            <div className="lg:col-span-2">
               <RecentTransactions sales={sales} />
             </div>
             <div className="space-y-4 sm:space-y-6">
