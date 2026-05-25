@@ -847,9 +847,9 @@ useEffect(() => {
           </div>
         </div>
       </div>
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Left column – unchanged (scanner, inventory, cart) */}
-        <div className="xl:col-span-2 space-y-4 sm:space-y-6">
+        <div className="lg:col-span-2 space-y-4 sm:space-y-6">
           {/* Scanner / Search */}
           <Card variant="elevated">
             <CardHeader className="pb-3">
