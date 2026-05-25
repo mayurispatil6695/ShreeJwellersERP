@@ -1,19 +1,24 @@
 import { initializeApp } from "firebase/app";
+import { getAnalytics } from "firebase/analytics";
 import { getAuth } from "firebase/auth";
 import { getDatabase } from "firebase/database";
 
+// Your web app's Firebase configuration (shree-jewellers-erp)
 const firebaseConfig = {
-  apiKey: "AIzaSyDeS9pG468xGTcSBb31GBli3n4ZUWo5sVc",
-  authDomain: "jewellery-1f0be.firebaseapp.com",
-  databaseURL: "https://jewellery-1f0be-default-rtdb.firebaseio.com",
-  projectId: "jewellery-1f0be",
-  storageBucket: "jewellery-1f0be.firebasestorage.app",
-  messagingSenderId: "917180969234",
-  appId: "1:917180969234:web:75fcfc29beee95610183cb",
-  measurementId: "G-50L5BZBP0T"
+  apiKey: "AIzaSyAWkPgMA5-sczqVUtVkKR-WOePvyTKdw3o",
+  authDomain: "shree-jewellers-erp.firebaseapp.com",
+  databaseURL: "https://shree-jewellers-erp-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "shree-jewellers-erp",
+  storageBucket: "shree-jewellers-erp.firebasestorage.app",
+  messagingSenderId: "180059515236",
+  appId: "1:180059515236:web:323f0668dd511b21edf271",
+  measurementId: "G-F8BBLRCS1Z"
 };
 
 const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
-export const db = getDatabase(app);
-export default app;
+const analytics = getAnalytics(app);
+const auth = getAuth(app);
+const database = getDatabase(app);
+const db = database;  // 👈 alias for compatibility
+
+export { app, analytics, auth, database, db };

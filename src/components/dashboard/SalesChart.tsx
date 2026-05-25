@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  TooltipProps,
 } from "recharts";
 import { useMemo } from "react";
 import { Activity } from "lucide-react";
@@ -9,15 +10,31 @@ interface Sale {
   id: string;
   total: number;
   created_at: string;
-  items: any;
+  items: unknown[]; // not used in chart, but needed for type safety
 }
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+interface ChartDataPoint {
+  name: string;
+  revenue: number;
+  count: number;
+}
+
+interface CustomTooltipProps extends TooltipProps<number, string> {
+  active?: boolean;
+  payload?: Array<{
+    value: number;
+    dataKey: string;
+    color: string;
+  }>;
+  label?: string;
+}
+
+const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
   if (active && payload && payload.length) {
     return (
       <div className="bg-card border border-border rounded-lg p-3 shadow-elevated">
         <p className="font-medium mb-2">{label}</p>
-        {payload.map((entry: any, index: number) => (
+        {payload.map((entry, index) => (
           <div key={index} className="flex items-center gap-2 text-sm">
             <div className="w-3 h-3 rounded-full" style={{ backgroundColor: entry.color }} />
             <span className="text-muted-foreground capitalize">{entry.dataKey}:</span>
@@ -32,10 +49,10 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 export function SalesChart({ sales = [] }: { sales?: Sale[] }) {
   const safeSales = Array.isArray(sales) ? sales : [];
-  const data = useMemo(() => {
+  const data = useMemo<ChartDataPoint[]>(() => {
     const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const now = new Date();
-    const result: { name: string; revenue: number; count: number }[] = [];
+    const result: ChartDataPoint[] = [];
 
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now);
@@ -52,10 +69,10 @@ export function SalesChart({ sales = [] }: { sales?: Sale[] }) {
   const totalWeek = data.reduce((a, d) => a + d.revenue, 0);
   const totalOrders = data.reduce((a, d) => a + d.count, 0);
 
-  const fmt = (v: number) => {
-    if (v >= 100000) return `₹${(v / 100000).toFixed(1)}L`;
-    if (v >= 1000) return `₹${(v / 1000).toFixed(0)}K`;
-    return `₹${v}`;
+  const formatCurrency = (value: number): string => {
+    if (value >= 100000) return `₹${(value / 100000).toFixed(1)}L`;
+    if (value >= 1000) return `₹${(value / 1000).toFixed(0)}K`;
+    return `₹${value}`;
   };
 
   return (
@@ -67,7 +84,7 @@ export function SalesChart({ sales = [] }: { sales?: Sale[] }) {
             Weekly Sales Overview
           </CardTitle>
           <p className="text-sm text-muted-foreground mt-1">
-            Last 7 days • {fmt(totalWeek)} revenue • {totalOrders} orders
+            Last 7 days • {formatCurrency(totalWeek)} revenue • {totalOrders} orders
           </p>
         </div>
         <div className="flex items-center gap-4 text-sm">
@@ -88,10 +105,26 @@ export function SalesChart({ sales = [] }: { sales?: Sale[] }) {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-              <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} axisLine={{ stroke: "hsl(var(--border))" }} tickLine={false} />
-              <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={v => fmt(v)} />
+              <XAxis 
+                dataKey="name" 
+                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} 
+                axisLine={{ stroke: "hsl(var(--border))" }} 
+                tickLine={false} 
+              />
+              <YAxis 
+                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} 
+                axisLine={false} 
+                tickLine={false} 
+                tickFormatter={formatCurrency} 
+              />
               <Tooltip content={<CustomTooltip />} />
-              <Area type="monotone" dataKey="revenue" stroke="hsl(43, 74%, 53%)" strokeWidth={2} fill="url(#dashGoldGrad)" />
+              <Area 
+                type="monotone" 
+                dataKey="revenue" 
+                stroke="hsl(43, 74%, 53%)" 
+                strokeWidth={2} 
+                fill="url(#dashGoldGrad)" 
+              />
             </AreaChart>
           </ResponsiveContainer>
         </div>

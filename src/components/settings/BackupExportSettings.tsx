@@ -97,11 +97,11 @@ function toCsvValue(value: unknown): string {
   return String(value).replace(/"/g, '""');
 }
 
-// ---------- Helper: Convert object to CSV rows ----------
-function objectToCsvRows(obj: Record<string, unknown>): string[] {
+// ---------- Helper: Convert an object to a CSV row (header line + value line) ----------
+function objectToCsvRows(obj: Record<string, unknown>): { headers: string[]; values: string[] } {
   const headers = Object.keys(obj);
   const values = headers.map(h => `"${toCsvValue(obj[h])}"`);
-  return [headers.join(','), values.join(',')];
+  return { headers, values };
 }
 
 // ---------- Helper: Generate PDF with autoTable ----------
@@ -114,19 +114,24 @@ function generatePdf(data: ExportData): void {
 
   let y = 35;
 
-  const addSection = (title: string, rows: Record<string, unknown>[] | undefined, columns: string[]) => {
+  // Generic addSection that works with any object type
+  const addSection = <T extends object>(
+    title: string,
+    rows: T[] | undefined,
+    columns: (keyof T)[]
+  ) => {
     if (!rows || rows.length === 0) return;
     doc.setFontSize(12);
     doc.text(title, 14, y);
     y += 6;
     autoTable(doc, {
       startY: y,
-      head: [columns],
+      head: [columns.map(String)],
       body: rows.map(row => columns.map(col => toCsvValue(row[col]))),
       theme: 'striped',
       margin: { left: 14 },
     });
-    y = (doc as any).lastAutoTable.finalY + 8;
+    y = (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
   };
 
   if (data.profile) {
@@ -161,16 +166,20 @@ function generatePdf(data: ExportData): void {
 function exportToCsv(data: ExportData): string {
   const sections: string[] = [];
 
-  const addSection = (title: string, rows: Record<string, unknown>[] | undefined) => {
+  const addSection = <T extends object>(title: string, rows: T[] | undefined) => {
     if (!rows || rows.length === 0) return;
     sections.push(`\n--- ${title} ---\n`);
-    rows.forEach(row => {
-      const { headers, values } = objectToCsvRows(row);
-      if (!sections.some(s => s.includes(headers[0]))) {
+    let headersAdded = false;
+    for (const row of rows) {
+      // Convert row to Record<string, unknown> for objectToCsvRows
+      const record = row as Record<string, unknown>;
+      const { headers, values } = objectToCsvRows(record);
+      if (!headersAdded) {
         sections.push(headers.join(',') + '\n');
+        headersAdded = true;
       }
       sections.push(values.join(',') + '\n');
-    });
+    }
   };
 
   if (data.profile) addSection('Profile', [data.profile]);
@@ -193,8 +202,8 @@ export function BackupExportSettings() {
   const [autoBackup, setAutoBackup] = useState(preferences?.auto_backup || false);
   const [backupFrequency, setBackupFrequency] = useState(preferences?.backup_frequency || 'weekly');
 
-  // Fetch all business data for complete export
-  const fetchAllBusinessData = async (): Promise<Omit<ExportData, 'profile' | 'preferences'>> => {
+  // Fetch all business data for complete export (without exportedAt)
+  const fetchAllBusinessData = async (): Promise<Omit<ExportData, 'profile' | 'preferences' | 'exportedAt'>> => {
     const [sales, products, customers, employees, investments] = await Promise.all([
       getAll<Sale>('sales'),
       getAll<Product>('products'),
