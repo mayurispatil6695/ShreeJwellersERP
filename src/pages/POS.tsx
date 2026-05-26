@@ -84,7 +84,10 @@ const isImitationProduct = (p: Product) => {
   const metal = (p.metal_type || "").toLowerCase();
   return name.includes("imitation") || name.includes("artificial") || name.includes("fashion") || metal.includes("imitation");
 };
-
+const needsCalculator = (product: Product): boolean => {
+  const metal = product.metal_type?.toLowerCase() || '';
+  return metal.includes('gold') || metal.includes('silver') || metal.includes('platinum') || metal.includes('diamond');
+};
 function isTodayBirthday(dob: string | null | undefined): boolean {
   if (!dob) return false;
   const today = new Date();
@@ -131,7 +134,7 @@ const POS = () => {
   const { data: products = [], isLoading } = useQuery({
     queryKey: ["pos-products"],
     queryFn: async () => {
-      const all = await getAll<Product>("products",true);
+      const all = await getAll<Product>("products");
       return all.filter((p) => p.stock > 0).sort((a, b) => a.name.localeCompare(b.name));
     },
   });
@@ -238,13 +241,13 @@ useEffect(() => {
       (p) => p.barcode?.toLowerCase() === code.toLowerCase() || p.sku?.toLowerCase() === code.toLowerCase()
     );
     if (!product) { toast.error(`Product not found: ${code}`); return; }
-    if (isGoldProduct(product)) {
-      sendToCalculator(product);
-      toast.success(`🔊 Scanned: ${product.name} → Calculator`);
-    } else {
-      addToCart(product);
-      toast.success(`🔊 Scanned: ${product.name} → Added to Bill`);
-    }
+    if (needsCalculator(product)) {
+  sendToCalculator(product);
+  toast.success(`🔊 Scanned: ${product.name} → Calculator`, { position: 'top-right' });
+} else {
+  addToCart(product);
+  toast.success(`🔊 Scanned: ${product.name} → Added to Bill`, { duration: 1000, position: 'top-right' });
+}
     setSearchQuery("");
   }, [products, cart]);
 
@@ -254,20 +257,20 @@ useEffect(() => {
         (p) => p.barcode?.toLowerCase() === searchQuery.trim().toLowerCase() || p.sku?.toLowerCase() === searchQuery.trim().toLowerCase()
       );
       if (product) {
-        e.preventDefault();
-        if (isGoldProduct(product)) sendToCalculator(product);
-        else addToCart(product);
-        setSearchQuery("");
-        return;
-      }
+  e.preventDefault();
+  if (needsCalculator(product)) sendToCalculator(product);
+  else addToCart(product);
+  setSearchQuery("");
+  return;
+}
       const filtered = products.filter(
         (p) => p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.sku.toLowerCase().includes(searchQuery.toLowerCase()) || p.barcode?.toLowerCase().includes(searchQuery.toLowerCase())
       );
       if (filtered.length === 1) {
-        if (isGoldProduct(filtered[0])) sendToCalculator(filtered[0]);
-        else addToCart(filtered[0]);
-        setSearchQuery("");
-      }
+  if (needsCalculator(filtered[0])) sendToCalculator(filtered[0]);
+  else addToCart(filtered[0]);
+  setSearchQuery("");
+}
     }
   };
 
@@ -320,7 +323,7 @@ useEffect(() => {
 
     encoder
       .initialize()
-      .text('shree   JEWELLERS')
+      .text('Shree   JEWELLERS')
       .newline()
       .text('================================')
       .newline()
@@ -433,7 +436,7 @@ useEffect(() => {
     </head>
     <body>
       <div class="header">
-        <h1>shree  JEWELLERS</h1>
+        <h1>Shree  JEWELLERS</h1>
         <p>${today}</p>
       </div>
       <div class="details">
@@ -497,7 +500,7 @@ useEffect(() => {
       </div>
 
       <div class="footer">
-        Thank you for shopping at shree Jewel ERP!
+        Thank you for shopping at Shree Jewel ERP!
       </div>
     </body>
     </html>
@@ -686,7 +689,17 @@ useEffect(() => {
       const invoiceNumber = `INV-${Date.now()}`;
       await addItem("sales", {
         invoice_number: invoiceNumber,
-        items: cart.map(item => ({ product_id: item.id, name: item.name, qty: item.qty, price: item.unit_price, calculated: item.calculatedPrice || false, purity: item.purity || null, metal_type: item.metal_type || null })),
+items: cart.map(item => ({ 
+  product_id: item.id, 
+  name: item.name, 
+  qty: item.qty, 
+  price: item.unit_price, 
+  calculated: item.calculatedPrice || false, 
+  purity: item.purity || null, 
+  metal_type: item.metal_type || null,
+  weight: item.weight || 0,
+  making: (item.calculatedPrice ? (item.unit_price - (goldRate || 0) * item.weight) : 0) // approximate making
+})),
         subtotal, tax, discount: totalDiscount, total,
         payment_method: paymentMethod,
         status: "Completed",
@@ -705,7 +718,7 @@ useEffect(() => {
         doc_type: "invoice",
       });
       for (const item of cart) {
-        if (!item.id.startsWith("calc-")) await updateItem("products", item.id, { stock: item.stock - item.qty },true);
+        if (!item.id.startsWith("calc-")) await updateItem("products", item.id, { stock: item.stock - item.qty });
       }
       if (finalCustomer) {
         await updateItem("customers", finalCustomer.id, { total_purchases: (finalCustomer.total_purchases || 0) + total, ...(birthdayDiscountApplied ? { birthday_offer_sent: true, last_offer_date: new Date().toISOString() } : {}) });
@@ -762,7 +775,7 @@ useEffect(() => {
     } else {
       setCart([...cart, { id: product.id, name: product.name, weight: product.weight, unit_price: product.unit_price, stock: product.stock, qty: 1, sku: product.sku, metal_type: product.metal_type }]);
     }
-    toast.success(`${product.name} added to cart`);
+    toast.success(`${product.name} added to cart`, { duration: 1000, position: 'top-right' });
   };
 
   const handleCalcAddToCart = useCallback((result: CalcResult) => {
@@ -877,14 +890,43 @@ useEffect(() => {
                       {filteredProducts.slice(0, 50).map(product => {
                         const gold = isGoldProduct(product), imitation = isImitationProduct(product);
                         return (
-                          <TableRow key={product.id} className="cursor-pointer hover:bg-muted/50" onClick={() => gold ? sendToCalculator(product) : addToCart(product)}>
-                            <TableCell className="py-2"><div className="flex items-center gap-2">{gold && <Gem className="w-3.5 h-3.5 text-primary shrink-0" />}{imitation && <Sparkles className="w-3.5 h-3.5 text-purple-500 shrink-0" />}<span className="text-sm font-medium">{product.name}</span></div></TableCell>
-                            <TableCell className="py-2 text-xs font-mono text-muted-foreground">{product.sku}</TableCell>
-                            <TableCell className="py-2 text-xs text-center">{imitation ? <Badge className="bg-purple-500/20 text-purple-600 border-purple-500/30 text-[9px]">Imitation</Badge> : <Badge variant="outline" className="text-[9px] px-1 py-0 border-primary/30 text-primary">{product.metal_type}</Badge>}</TableCell>
-                            <TableCell className="py-2 text-xs text-center"><Badge variant={product.stock <= 3 ? "destructive" : "secondary"} className="text-[10px]">{product.stock}</Badge></TableCell>
-                            <TableCell className="py-2 text-sm font-semibold text-primary text-right">₹{product.unit_price.toLocaleString()}</TableCell>
-                            <TableCell className="py-2 text-right">{gold ? <Button variant="gold" size="sm" className="h-6 text-[10px] px-2"><Calculator className="w-3 h-3 mr-1" />Calc</Button> : <Button variant="ghost" size="sm" className="h-6 text-xs"><Plus className="w-3 h-3 mr-1" />Add</Button>}</TableCell>
-                          </TableRow>
+                          <TableRow 
+  key={product.id} 
+  className="cursor-pointer hover:bg-muted/50" 
+  onClick={() => needsCalculator(product) ? sendToCalculator(product) : addToCart(product)}
+>
+  {/* Product name cell – keep as is */}
+  <TableCell className="py-2">
+    <div className="flex items-center gap-2">
+      {needsCalculator(product) && <Gem className="w-3.5 h-3.5 text-primary shrink-0" />}
+      {isImitationProduct(product) && <Sparkles className="w-3.5 h-3.5 text-purple-500 shrink-0" />}
+      <span className="text-sm font-medium">{product.name}</span>
+    </div>
+  </TableCell>
+  {/* SKU, Type, Stock, Price cells – unchanged */}
+  <TableCell className="py-2 text-xs font-mono text-muted-foreground">{product.sku}</TableCell>
+  <TableCell className="py-2 text-xs text-center">
+    {isImitationProduct(product) ? 
+      <Badge className="bg-purple-500/20 text-purple-600 border-purple-500/30 text-[9px]">Imitation</Badge> : 
+      <Badge variant="outline" className="text-[9px] px-1 py-0 border-primary/30 text-primary">{product.metal_type}</Badge>
+    }
+  </TableCell>
+  <TableCell className="py-2 text-xs text-center">
+    <Badge variant={product.stock <= 3 ? "destructive" : "secondary"} className="text-[10px]">{product.stock}</Badge>
+  </TableCell>
+  <TableCell className="py-2 text-sm font-semibold text-primary text-right">₹{product.unit_price.toLocaleString()}</TableCell>
+  <TableCell className="py-2 text-right">
+    {needsCalculator(product) ? (
+      <Button variant="gold" size="sm" className="h-6 text-[10px] px-2" onClick={() => sendToCalculator(product)}>
+        <Calculator className="w-3 h-3 mr-1" />Calc
+      </Button>
+    ) : (
+      <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => addToCart(product)}>
+        <Plus className="w-3 h-3 mr-1" />Add
+      </Button>
+    )}
+  </TableCell>
+</TableRow>
                         );
                       })}
                     </TableBody>
