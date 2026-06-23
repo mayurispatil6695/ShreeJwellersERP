@@ -132,12 +132,12 @@ const POS = () => {
 
 
   const { data: products = [], isLoading } = useQuery({
-    queryKey: ["pos-products"],
-    queryFn: async () => {
-      const all = await getAll<Product>("products");
-      return all.filter((p) => p.stock > 0).sort((a, b) => a.name.localeCompare(b.name));
-    },
-  });
+  queryKey: ["pos-products"],
+  queryFn: async () => {
+    const all = await getAll<Product>("products", true); // ✅ Pass shared: true
+    return all.filter((p) => p.stock > 0).sort((a, b) => a.name.localeCompare(b.name));
+  },
+});
 
   const { data: customers = [] } = useQuery({
     queryKey: ["customers"],
