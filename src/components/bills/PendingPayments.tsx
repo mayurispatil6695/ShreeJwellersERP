@@ -10,13 +10,12 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useUserData } from "@/hooks/useUserData";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { Search, Calendar, IndianRupee, X, Download } from "lucide-react";
+import { Search, Calendar, IndianRupee, X, Download, Plus } from "lucide-react";
 
-// Extended Sale interface with payments array
 interface Payment {
   amount: number;
   method: string;
-  date: string;      // ISO string
+  date: string;
   note?: string;
 }
 
@@ -28,22 +27,31 @@ interface Sale {
   paid_amount: number;
   pending_amount: number;
   created_at: string;
-  payment_method: string;   // initial method, for fallback
+  payment_method: string;
   payments?: Payment[];
 }
 
 export function PendingPayments() {
-  const { getAll, updateItem, getById } = useUserData();
+  const { getAll, updateItem, getById, addItem } = useUserData();
   const queryClient = useQueryClient();
+
+  // States for recording a payment
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [paymentMethod, setPaymentMethod] = useState<string>("Cash");
-  const [paymentDate, setPaymentDate] = useState<string>(() => {
-    // Default to today's date in YYYY-MM-DD format
-    return new Date().toISOString().slice(0, 10);
-  });
+  const [paymentDate, setPaymentDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [paymentNote, setPaymentNote] = useState<string>("");
   const [dialogOpen, setDialogOpen] = useState(false);
+
+  // States for adding a new pending entry
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [newPending, setNewPending] = useState({
+    customer_name: "",
+    total: "",
+    pending_amount: "",
+    invoice_date: new Date().toISOString().slice(0, 10),
+    invoice_number: "",
+  });
 
   // Filters state
   const [search, setSearch] = useState("");
@@ -54,16 +62,16 @@ export function PendingPayments() {
   const [sortBy, setSortBy] = useState<"date" | "invoice" | "customer" | "pending">("date");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
+  // Fetch all sales
   const { data: sales = [], isLoading } = useQuery({
     queryKey: ["all-sales"],
     queryFn: () => getAll<Sale>("sales"),
   });
 
-  // Enrich sales with a computed payments array for backward compatibility
+  // Enrich sales with payments array (backward compatibility)
   const enrichedSales = useMemo(() => {
     return sales.map(s => {
       if (s.payments && s.payments.length > 0) return s;
-      // For old sales without payments array, create a synthetic one if paid_amount > 0
       if (s.paid_amount > 0) {
         return {
           ...s,
@@ -79,7 +87,7 @@ export function PendingPayments() {
     });
   }, [sales]);
 
-  // Filter and sort pending sales
+  // Filter and sort
   const filteredSales = useMemo(() => {
     let pending = enrichedSales.filter(s => (s.pending_amount || 0) > 0);
 
@@ -162,18 +170,16 @@ export function PendingPayments() {
     toast.success("Export started");
   };
 
+  // Mutation to record a payment
   const recordPaymentMutation = useMutation({
     mutationFn: async () => {
       if (!selectedSale) return;
       if (paymentAmount <= 0 || paymentAmount > selectedSale.pending_amount) {
         throw new Error("Invalid payment amount");
       }
-
-      // 1. Fetch the latest sale from server to avoid conflicts
       const currentSale = await getById<Sale>("sales", selectedSale.id);
       if (!currentSale) throw new Error("Sale not found");
 
-      // 2. Build new payment entry with the selected date
       const newPayment: Payment = {
         amount: paymentAmount,
         method: paymentMethod,
@@ -181,24 +187,18 @@ export function PendingPayments() {
         note: paymentNote.trim() || undefined,
       };
 
-      // 3. Merge with existing payments (or create new array)
       const existingPayments = currentSale.payments || [];
       const updatedPayments = [...existingPayments, newPayment];
-
-      // 4. Compute new totals
       const totalPaid = updatedPayments.reduce((sum, p) => sum + p.amount, 0);
       const newPending = currentSale.total - totalPaid;
       const newStatus = newPending <= 0 ? 'paid' : totalPaid > 0 ? 'partially_paid' : 'pending';
 
-      // 5. Update the sale document
       await updateItem("sales", selectedSale.id, {
         payments: updatedPayments,
         paid_amount: totalPaid,
         pending_amount: newPending,
         payment_status: newStatus,
       });
-
-      // 6. Optionally: store in separate payments collection? Not needed; we keep it on the sale.
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["all-sales"] });
@@ -210,6 +210,51 @@ export function PendingPayments() {
       setPaymentNote("");
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to record payment"),
+  });
+
+  // Mutation to add a new pending entry
+  const addPendingMutation = useMutation({
+    mutationFn: async () => {
+      const total = parseFloat(newPending.total);
+      const pending = parseFloat(newPending.pending_amount);
+      if (isNaN(total) || total <= 0) throw new Error("Invalid total amount");
+      if (isNaN(pending) || pending < 0) throw new Error("Invalid pending amount");
+      const invoiceNumber = newPending.invoice_number.trim() || `PEND-${Date.now()}`;
+
+      const paidAmount = total - pending;
+
+      await addItem("sales", {
+        invoice_number: invoiceNumber,
+        customer_name: newPending.customer_name.trim() || "Walk-in",
+        items: [{ name: "Previous Pending", qty: 1, price: total }],
+        subtotal: total,
+        tax: 0,
+        discount: 0,
+        total: total,
+        paid_amount: paidAmount,
+        pending_amount: pending,
+        payment_status: pending > 0 ? (pending === total ? 'pending' : 'partially_paid') : 'paid',
+        payment_method: "Cash",
+        status: "Completed",
+        created_at: new Date(newPending.invoice_date).toISOString(),
+        doc_type: "invoice",
+        gst_enabled: false,
+        payments: [],
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["all-sales"] });
+      toast.success("Pending amount added successfully!");
+      setAddDialogOpen(false);
+      setNewPending({
+        customer_name: "",
+        total: "",
+        pending_amount: "",
+        invoice_date: new Date().toISOString().slice(0, 10),
+        invoice_number: "",
+      });
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : "Failed to add pending"),
   });
 
   const handleDialogOpen = (sale: Sale) => {
@@ -224,12 +269,17 @@ export function PendingPayments() {
     <Card variant="elevated">
       <CardHeader className="flex flex-row items-center justify-between flex-wrap gap-2">
         <CardTitle>Outstanding Payments</CardTitle>
-        <Button variant="outline" size="sm" onClick={exportToCSV} disabled={filteredSales.length === 0}>
-          <Download className="w-4 h-4 mr-1" /> Export CSV
-        </Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button variant="gold" size="sm" onClick={() => setAddDialogOpen(true)}>
+            <Plus className="w-4 h-4 mr-1" /> Add Pending
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportToCSV} disabled={filteredSales.length === 0}>
+            <Download className="w-4 h-4 mr-1" /> Export CSV
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Filter Bar - same as before */}
+        {/* Filter Bar */}
         <div className="flex flex-col md:flex-row gap-3 p-3 bg-muted/30 rounded-lg flex-wrap">
           <div className="flex-1 min-w-[150px]">
             <div className="relative">
@@ -284,7 +334,9 @@ export function PendingPayments() {
         {isLoading ? (
           <div className="text-center py-8">Loading...</div>
         ) : filteredSales.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">No pending payments match your filters.</div>
+          <div className="text-center py-8 text-muted-foreground">
+            No pending payments. Use <strong>“Add Pending”</strong> to enter previous pen‑paper records.
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <Table>
@@ -328,7 +380,6 @@ export function PendingPayments() {
             <DialogTitle>Record Payment for {selectedSale?.invoice_number}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            {/* Payment History */}
             {selectedSale?.payments && selectedSale.payments.length > 0 && (
               <div>
                 <Label className="text-sm font-semibold">Payment History</Label>
@@ -353,9 +404,8 @@ export function PendingPayments() {
             </div>
 
             <div>
-              <Label htmlFor="paymentAmount">Amount to pay</Label>
+              <Label>Amount to pay</Label>
               <Input
-                id="paymentAmount"
                 type="number"
                 value={paymentAmount}
                 onChange={(e) => setPaymentAmount(Number(e.target.value))}
@@ -365,9 +415,9 @@ export function PendingPayments() {
             </div>
 
             <div>
-              <Label htmlFor="paymentMethod">Payment Method</Label>
+              <Label>Payment Method</Label>
               <Select value={paymentMethod} onValueChange={setPaymentMethod}>
-                <SelectTrigger id="paymentMethod"><SelectValue /></SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Cash">Cash</SelectItem>
                   <SelectItem value="Card">Card</SelectItem>
@@ -379,22 +429,20 @@ export function PendingPayments() {
             </div>
 
             <div>
-              <Label htmlFor="paymentDate">Payment Date</Label>
+              <Label>Payment Date</Label>
               <Input
-                id="paymentDate"
                 type="date"
                 value={paymentDate}
                 onChange={(e) => setPaymentDate(e.target.value)}
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Set the date when this payment was actually made (e.g., for historical entries).
+                Set the date when the payment was actually made (e.g., for historical entries).
               </p>
             </div>
 
             <div>
-              <Label htmlFor="paymentNote">Note (optional)</Label>
+              <Label>Note (optional)</Label>
               <Input
-                id="paymentNote"
                 placeholder="e.g., partial payment, received via cheque"
                 value={paymentNote}
                 onChange={(e) => setPaymentNote(e.target.value)}
@@ -405,6 +453,66 @@ export function PendingPayments() {
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button onClick={() => recordPaymentMutation.mutate()} disabled={recordPaymentMutation.isPending}>
               {recordPaymentMutation.isPending ? "Processing..." : "Record Payment"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Pending Dialog */}
+      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Add Previous Pending Amount</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Customer Name</Label>
+              <Input
+                placeholder="e.g., Rajesh Sharma"
+                value={newPending.customer_name}
+                onChange={(e) => setNewPending({...newPending, customer_name: e.target.value})}
+              />
+            </div>
+            <div>
+              <Label>Invoice Number (optional)</Label>
+              <Input
+                placeholder="Leave blank to auto-generate"
+                value={newPending.invoice_number}
+                onChange={(e) => setNewPending({...newPending, invoice_number: e.target.value})}
+              />
+            </div>
+            <div>
+              <Label>Total Amount (₹)</Label>
+              <Input
+                type="number"
+                placeholder="e.g., 50000"
+                value={newPending.total}
+                onChange={(e) => setNewPending({...newPending, total: e.target.value})}
+              />
+            </div>
+            <div>
+              <Label>Pending Amount (₹)</Label>
+              <Input
+                type="number"
+                placeholder="e.g., 20000"
+                value={newPending.pending_amount}
+                onChange={(e) => setNewPending({...newPending, pending_amount: e.target.value})}
+              />
+            </div>
+            <div>
+              <Label>Invoice Date</Label>
+              <Input
+                type="date"
+                value={newPending.invoice_date}
+                onChange={(e) => setNewPending({...newPending, invoice_date: e.target.value})}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              This creates a sale record with a dummy item. You can later record payments against it.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddDialogOpen(false)}>Cancel</Button>
+            <Button variant="gold" onClick={() => addPendingMutation.mutate()} disabled={addPendingMutation.isPending}>
+              {addPendingMutation.isPending ? "Adding..." : "Add Pending"}
             </Button>
           </DialogFooter>
         </DialogContent>
