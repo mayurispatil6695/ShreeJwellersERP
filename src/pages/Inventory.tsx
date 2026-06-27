@@ -1,4 +1,4 @@
-import { useState,useMemo } from "react";
+import { useState, useMemo } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -67,16 +67,20 @@ const Inventory = () => {
   const [bulkFile, setBulkFile] = useState<File | null>(null);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkResults, setBulkResults] = useState<{ success: number; failed: number }>({ success: 0, failed: 0 });
-  
+
+  // Custom category states
+  const [customCategory, setCustomCategory] = useState("");
+  const [isCustomCategory, setIsCustomCategory] = useState(false);
+
   const queryClient = useQueryClient();
   const { getAll, addItem, updateItem, deleteItem } = useUserData();
   const { createNotification } = useNotifications();
 
   const { data: products = [], isLoading } = useQuery({
-  queryKey: ["products"],
-  queryFn: () => getAll<Product>("products", true),  // 👈 shared = true
-});
-  // Export to Excel
+    queryKey: ["products"],
+    queryFn: () => getAll<Product>("products", true), // ✅ shared
+  });
+
   const exportToExcel = () => {
     const exportData = products.map(p => ({
       "Product Name": p.name,
@@ -97,102 +101,99 @@ const Inventory = () => {
     toast.success("Inventory exported successfully");
   };
 
-  // Bulk upload handler – no `any`
   const handleBulkUpload = async () => {
-  if (!bulkFile) return;
+    if (!bulkFile) return;
 
-  const fileName = bulkFile.name.toLowerCase();
-  if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls') && !fileName.endsWith('.csv')) {
-    toast.error('Please upload a valid Excel (.xlsx, .xls) or CSV file');
-    return;
-  }
-
-  setBulkLoading(true);
-  setBulkResults({ success: 0, failed: 0 });
-
-  const reader = new FileReader();
-  reader.onload = async (e) => {
-    const data = e.target?.result;
-    if (!data) {
-      toast.error('Failed to read file');
-      setBulkLoading(false);
+    const fileName = bulkFile.name.toLowerCase();
+    if (!fileName.endsWith('.xlsx') && !fileName.endsWith('.xls') && !fileName.endsWith('.csv')) {
+      toast.error('Please upload a valid Excel (.xlsx, .xls) or CSV file');
       return;
     }
 
-    try {
-      const workbook = XLSX.read(data, { type: "array" });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json<ExcelProductRow>(sheet);
+    setBulkLoading(true);
+    setBulkResults({ success: 0, failed: 0 });
 
-      let success = 0, failed = 0;
-      for (const row of rows) {
-        // ... your existing validation and insertion code
-      
-        try {
-          // Extract values with fallbacks
-          const name = row["Product Name"] || row.name;
-          const sku = row["SKU"] || row.sku;
-          const category = row["Category"] || row.category;
-          const metal_type = row["Metal Type"] || row.metal_type;
-          const weight = typeof (row["Weight (g)]"] ?? row.weight) === "number"
-            ? (row["Weight (g)"] ?? row.weight) as number
-            : parseFloat(String(row["Weight (g)"] ?? row.weight ?? ""));
-          const stock = typeof (row.Stock ?? row.stock) === "number"
-            ? (row.Stock ?? row.stock) as number
-            : parseInt(String(row.Stock ?? row.stock ?? ""), 10);
-          const unit_price = typeof (row["Selling Price"] ?? row.unit_price) === "number"
-            ? (row["Selling Price"] ?? row.unit_price) as number
-            : parseFloat(String(row["Selling Price"] ?? row.unit_price ?? ""));
-          const purchase_price = typeof (row["Cost Price"] ?? row.purchase_price) === "number"
-            ? (row["Cost Price"] ?? row.purchase_price) as number
-            : parseFloat(String(row["Cost Price"] ?? row.purchase_price ?? ""));
-
-          if (!name || !sku || isNaN(weight) || isNaN(stock) || isNaN(unit_price)) {
-            failed++;
-            continue;
-          }
-
-          const barcode = generateBarcode(metal_type);
-          const metalPrefix = metal_type?.replace(/\s/g, "").substring(0, 3).toUpperCase() || "GEN";
-          const finalSku = sku || `${metalPrefix}-${Date.now().toString(36).toUpperCase()}`;
-          const status = stock === 0 ? "Out of Stock" : stock <= 5 ? "Low Stock" : "In Stock";
-          const isImitation = metal_type === "Imitation";
-
-          await addItem("products", {
-            sku: finalSku,
-            barcode,
-            name,
-            category: category || "Other",
-            metal_type: metal_type || "Gold 22K",
-            weight,
-            stock,
-            purchase_price: isImitation ? purchase_price : 0,
-            unit_price,
-            status,
-          },true);
-          success++;
-        } catch (err) {
-          console.error("Bulk upload row error", err);
-          failed++;
-        }
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const data = e.target?.result;
+      if (!data) {
+        toast.error('Failed to read file');
+        setBulkLoading(false);
+        return;
       }
-      
-      setBulkResults({ success, failed });
-      toast.success(`Upload complete: ${success} added, ${failed} failed`);
-      queryClient.invalidateQueries({ queryKey: ["products"] });
-      setBulkOpen(false);
-      setBulkFile(null);
-    } catch (err) {
-      console.error("Error parsing file:", err);
-      toast.error('Failed to parse file. Please ensure it is a valid Excel or CSV file.');
-    } finally {
-      setBulkLoading(false);
-    }
+
+      try {
+        const workbook = XLSX.read(data, { type: "array" });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json<ExcelProductRow>(sheet);
+
+        let success = 0, failed = 0;
+        for (const row of rows) {
+          try {
+            const name = row["Product Name"] || row.name;
+            const sku = row["SKU"] || row.sku;
+            const category = row["Category"] || row.category;
+            const metal_type = row["Metal Type"] || row.metal_type;
+            const weight = typeof (row["Weight (g)"] ?? row.weight) === "number"
+              ? (row["Weight (g)"] ?? row.weight) as number
+              : parseFloat(String(row["Weight (g)"] ?? row.weight ?? ""));
+            const stock = typeof (row.Stock ?? row.stock) === "number"
+              ? (row.Stock ?? row.stock) as number
+              : parseInt(String(row.Stock ?? row.stock ?? ""), 10);
+            const unit_price = typeof (row["Selling Price"] ?? row.unit_price) === "number"
+              ? (row["Selling Price"] ?? row.unit_price) as number
+              : parseFloat(String(row["Selling Price"] ?? row.unit_price ?? ""));
+            const purchase_price = typeof (row["Cost Price"] ?? row.purchase_price) === "number"
+              ? (row["Cost Price"] ?? row.purchase_price) as number
+              : parseFloat(String(row["Cost Price"] ?? row.purchase_price ?? ""));
+
+            if (!name || !sku || isNaN(weight) || isNaN(stock) || isNaN(unit_price)) {
+              failed++;
+              continue;
+            }
+
+            const barcode = generateBarcode(metal_type);
+            const metalPrefix = metal_type?.replace(/\s/g, "").substring(0, 3).toUpperCase() || "GEN";
+            const finalSku = sku || `${metalPrefix}-${Date.now().toString(36).toUpperCase()}`;
+            const status = stock === 0 ? "Out of Stock" : stock <= 5 ? "Low Stock" : "In Stock";
+            const isImitation = metal_type === "Imitation";
+
+            await addItem("products", {
+              sku: finalSku,
+              barcode,
+              name,
+              category: category || "Other",
+              metal_type: metal_type || "Gold 22K",
+              weight,
+              stock,
+              purchase_price: isImitation ? purchase_price : 0,
+              unit_price,
+              status,
+            }, true); // ✅ shared
+            success++;
+          } catch (err) {
+            console.error("Bulk upload row error", err);
+            failed++;
+          }
+        }
+
+        setBulkResults({ success, failed });
+        toast.success(`Upload complete: ${success} added, ${failed} failed`);
+        queryClient.invalidateQueries({ queryKey: ["products"] });
+        setBulkOpen(false);
+        setBulkFile(null);
+      } catch (err) {
+        console.error("Error parsing file:", err);
+        toast.error('Failed to parse file. Please ensure it is a valid Excel or CSV file.');
+      } finally {
+        setBulkLoading(false);
+      }
+    };
+    reader.readAsArrayBuffer(bulkFile);
   };
-  reader.readAsArrayBuffer(bulkFile);
-};
+
   const addProductMutation = useMutation({
-   mutationFn: async (newProduct: Omit<Product, "id">) => addItem("products", newProduct, true),
+    mutationFn: async (newProduct: Omit<Product, "id">) => addItem("products", newProduct, true),
     onSuccess: (_id, newProduct) => {
       queryClient.invalidateQueries({ queryKey: ["products"] });
       toast.success("Product added successfully!");
@@ -209,7 +210,7 @@ const Inventory = () => {
           message: `${newProduct.name} has only ${newProduct.stock} units in stock.`,
           type: "inventory",
           priority: "high",
-          action_url: "/inventory",   // 👈 add this
+          action_url: "/inventory",
         });
       }
       setIsDialogOpen(false);
@@ -219,7 +220,8 @@ const Inventory = () => {
   });
 
   const updateProductMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<Omit<Product, "id">> }) => updateItem("products", id, data,true),
+    mutationFn: async ({ id, data }: { id: string; data: Partial<Omit<Product, "id">> }) =>
+      updateItem("products", id, data, true),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["products"] });
       queryClient.invalidateQueries({ queryKey: ["pos-products"] });
@@ -246,6 +248,12 @@ const Inventory = () => {
     const stock = parseInt(formData.stock, 10);
     const status = stock === 0 ? "Out of Stock" : stock <= 5 ? "Low Stock" : "In Stock";
     const isImitation = formData.metal_type === "Imitation";
+    let weight = parseFloat(formData.weight);
+    if (isImitation && isNaN(weight)) weight = 0;
+    if (!isImitation && (isNaN(weight) || weight <= 0)) {
+      toast.error("Weight is required for precious metals");
+      return;
+    }
 
     if (editProduct) {
       updateProductMutation.mutate({
@@ -254,7 +262,7 @@ const Inventory = () => {
           name: formData.name,
           category: formData.category,
           metal_type: formData.metal_type,
-          weight: parseFloat(formData.weight),
+          weight,
           stock,
           purchase_price: isImitation ? parseFloat(formData.purchase_price) : 0,
           unit_price: isImitation ? parseFloat(formData.unit_price) : 0,
@@ -271,7 +279,7 @@ const Inventory = () => {
         name: formData.name,
         category: formData.category,
         metal_type: formData.metal_type,
-        weight: parseFloat(formData.weight),
+        weight,
         stock,
         purchase_price: isImitation ? parseFloat(formData.purchase_price) : 0,
         unit_price: isImitation ? parseFloat(formData.unit_price) : 0,
@@ -291,12 +299,22 @@ const Inventory = () => {
       purchase_price: String(product.purchase_price || ""),
       unit_price: String(product.unit_price),
     });
+    const predefinedCategories = ["Necklace", "Ring", "Bangle", "Earring", "Pendant", "Anklet", "Chain", "Bracelet", "Set"];
+    if (!predefinedCategories.includes(product.category)) {
+      setIsCustomCategory(true);
+      setCustomCategory(product.category);
+    } else {
+      setIsCustomCategory(false);
+      setCustomCategory("");
+    }
   };
 
   const closeForm = () => {
     setIsDialogOpen(false);
     setEditProduct(null);
     setFormData(emptyForm);
+    setIsCustomCategory(false);
+    setCustomCategory("");
   };
 
   const filteredProducts = products.filter((p) => {
@@ -313,18 +331,19 @@ const Inventory = () => {
       (metalFilter === "Imitation" && p.metal_type?.toLowerCase().includes("imitation"));
     return matchesSearch && matchesMetal;
   });
-const filteredStats = useMemo(() => {
-  const totalWeight = filteredProducts.reduce((sum, p) => sum + (p.weight || 0), 0);
-  const totalProducts = filteredProducts.length;
-  const totalStock = filteredProducts.reduce((sum, p) => sum + (p.stock || 0), 0);
-  const totalValue = filteredProducts.reduce((sum, p) => sum + (p.unit_price || 0) * (p.stock || 0), 0);
-  const totalCost = filteredProducts.reduce((sum, p) => sum + (p.purchase_price || 0) * (p.stock || 0), 0);
-  const totalProfit = totalValue - totalCost;
-  // ✅ Use stock value, not the stored status field
-  const lowStock = filteredProducts.filter(p => p.stock > 0 && p.stock <= 5).length;
-  const outOfStock = filteredProducts.filter(p => p.stock === 0).length;
-  return { totalWeight, totalProducts, totalStock, totalValue, totalCost, totalProfit, lowStock, outOfStock };
-}, [filteredProducts]);
+
+  const filteredStats = useMemo(() => {
+    const totalWeight = filteredProducts.reduce((sum, p) => sum + (p.weight || 0), 0);
+    const totalProducts = filteredProducts.length;
+    const totalStock = filteredProducts.reduce((sum, p) => sum + (p.stock || 0), 0);
+    const totalValue = filteredProducts.reduce((sum, p) => sum + (p.unit_price || 0) * (p.stock || 0), 0);
+    const totalCost = filteredProducts.reduce((sum, p) => sum + (p.purchase_price || 0) * (p.stock || 0), 0);
+    const totalProfit = totalValue - totalCost;
+    const lowStock = filteredProducts.filter(p => p.stock > 0 && p.stock <= 5).length;
+    const outOfStock = filteredProducts.filter(p => p.stock === 0).length;
+    return { totalWeight, totalProducts, totalStock, totalValue, totalCost, totalProfit, lowStock, outOfStock };
+  }, [filteredProducts]);
+
   const formatCurrency = (value: number) => {
     if (value >= 10000000) return `₹${(value / 10000000).toFixed(1)}Cr`;
     if (value >= 100000) return `₹${(value / 100000).toFixed(1)}L`;
@@ -348,74 +367,80 @@ const filteredStats = useMemo(() => {
             <Button variant="outline" onClick={() => setBulkOpen(true)}>
               <Upload className="w-4 h-4 mr-2" /> Bulk Upload
             </Button>
-            <Button variant="gold" onClick={() => { setFormData(emptyForm); setEditProduct(null); setIsDialogOpen(true); }}>
+            <Button
+              variant="gold"
+              onClick={() => {
+                setFormData(emptyForm);
+                setEditProduct(null);
+                setIsDialogOpen(true);
+                setIsCustomCategory(false);
+                setCustomCategory("");
+              }}
+            >
               <Plus className="w-4 h-4 mr-2" />Add Product
             </Button>
           </div>
         </div>
       </div>
 
-     <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 sm:gap-4 mb-6">
-  {/* Always show Total Weight and Product Count */}
-  <Card variant="stat">
-    <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
-      <p className="text-xs sm:text-sm text-muted-foreground">Total Weight</p>
-      <p className="text-xl sm:text-2xl font-bold text-primary">{filteredStats.totalWeight.toFixed(2)}g</p>
-    </CardContent>
-  </Card>
-  <Card variant="stat">
-    <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
-      <p className="text-xs sm:text-sm text-muted-foreground">Product Count</p>
-      <p className="text-xl sm:text-2xl font-bold text-primary">{filteredStats.totalProducts}</p>
-    </CardContent>
-  </Card>
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 sm:gap-4 mb-6">
+        <Card variant="stat">
+          <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
+            <p className="text-xs sm:text-sm text-muted-foreground">Total Weight</p>
+            <p className="text-xl sm:text-2xl font-bold text-primary">{filteredStats.totalWeight.toFixed(2)}g</p>
+          </CardContent>
+        </Card>
+        <Card variant="stat">
+          <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
+            <p className="text-xs sm:text-sm text-muted-foreground">Product Count</p>
+            <p className="text-xl sm:text-2xl font-bold text-primary">{filteredStats.totalProducts}</p>
+          </CardContent>
+        </Card>
 
-  {/* For Gold or Silver: show Total Stock instead of financial cards */}
-  {metalFilter === "Gold" || metalFilter === "Silver" ? (
-    <>
-      <Card variant="stat">
-        <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
-          <p className="text-xs sm:text-sm text-muted-foreground">Total Stock</p>
-          <p className="text-xl sm:text-2xl font-bold text-primary">{filteredStats.totalStock}</p>
-        </CardContent>
-      </Card>
-      <Card variant="stat">
-        <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
-          <p className="text-xs sm:text-sm text-muted-foreground">Low / Out</p>
-          <p className="text-xl sm:text-2xl font-bold text-destructive">{filteredStats.lowStock} / {filteredStats.outOfStock}</p>
-        </CardContent>
-      </Card>
-    </>
-  ) : (
-    // For All Metals or Imitation: show full financial cards
-    <>
-      <Card variant="stat">
-        <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
-          <p className="text-xs sm:text-sm text-muted-foreground">Selling Value</p>
-          <p className="text-xl sm:text-2xl font-bold">{formatCurrency(filteredStats.totalValue)}</p>
-        </CardContent>
-      </Card>
-      <Card variant="stat">
-        <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
-          <p className="text-xs sm:text-sm text-muted-foreground">Cost Value</p>
-          <p className="text-xl sm:text-2xl font-bold text-muted-foreground">{formatCurrency(filteredStats.totalCost)}</p>
-        </CardContent>
-      </Card>
-      <Card variant="stat">
-        <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
-          <p className="text-xs sm:text-sm text-muted-foreground">Profit Margin</p>
-          <p className="text-xl sm:text-2xl font-bold text-emerald-500">{formatCurrency(filteredStats.totalProfit)}</p>
-        </CardContent>
-      </Card>
-      <Card variant="stat">
-        <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
-          <p className="text-xs sm:text-sm text-muted-foreground">Low / Out</p>
-          <p className="text-xl sm:text-2xl font-bold text-destructive">{filteredStats.lowStock} / {filteredStats.outOfStock}</p>
-        </CardContent>
-      </Card>
-    </>
-  )}
-</div>
+        {metalFilter === "Gold" || metalFilter === "Silver" ? (
+          <>
+            <Card variant="stat">
+              <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
+                <p className="text-xs sm:text-sm text-muted-foreground">Total Stock</p>
+                <p className="text-xl sm:text-2xl font-bold text-primary">{filteredStats.totalStock}</p>
+              </CardContent>
+            </Card>
+            <Card variant="stat">
+              <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
+                <p className="text-xs sm:text-sm text-muted-foreground">Low / Out</p>
+                <p className="text-xl sm:text-2xl font-bold text-destructive">{filteredStats.lowStock} / {filteredStats.outOfStock}</p>
+              </CardContent>
+            </Card>
+          </>
+        ) : (
+          <>
+            <Card variant="stat">
+              <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
+                <p className="text-xs sm:text-sm text-muted-foreground">Selling Value</p>
+                <p className="text-xl sm:text-2xl font-bold">{formatCurrency(filteredStats.totalValue)}</p>
+              </CardContent>
+            </Card>
+            <Card variant="stat">
+              <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
+                <p className="text-xs sm:text-sm text-muted-foreground">Cost Value</p>
+                <p className="text-xl sm:text-2xl font-bold text-muted-foreground">{formatCurrency(filteredStats.totalCost)}</p>
+              </CardContent>
+            </Card>
+            <Card variant="stat">
+              <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
+                <p className="text-xs sm:text-sm text-muted-foreground">Profit Margin</p>
+                <p className="text-xl sm:text-2xl font-bold text-emerald-500">{formatCurrency(filteredStats.totalProfit)}</p>
+              </CardContent>
+            </Card>
+            <Card variant="stat">
+              <CardContent className="pt-4 sm:pt-6 px-3 sm:px-6">
+                <p className="text-xs sm:text-sm text-muted-foreground">Low / Out</p>
+                <p className="text-xl sm:text-2xl font-bold text-destructive">{filteredStats.lowStock} / {filteredStats.outOfStock}</p>
+              </CardContent>
+            </Card>
+          </>
+        )}
+      </div>
 
       <Card variant="elevated">
         <CardHeader className="pb-3">
@@ -450,19 +475,21 @@ const filteredStats = useMemo(() => {
             <div className="text-center py-8 text-muted-foreground">{products.length === 0 ? "No products yet. Add your first product!" : "No products found."}</div>
           ) : (
             <Table>
-              <TableHeader><TableRow>
-                <TableHead className="whitespace-nowrap">Barcode</TableHead>
-                <TableHead className="whitespace-nowrap">Product Name</TableHead>
-                <TableHead className="hidden md:table-cell">Category</TableHead>
-                <TableHead className="hidden lg:table-cell">Metal</TableHead>
-                <TableHead className="hidden sm:table-cell">Weight</TableHead>
-                <TableHead>Stock</TableHead>
-                <TableHead className="hidden sm:table-cell">Purchase ₹</TableHead>
-                <TableHead className="hidden sm:table-cell">Selling ₹</TableHead>
-                <TableHead className="hidden lg:table-cell">Margin</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-center">Actions</TableHead>
-              </TableRow></TableHeader>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="whitespace-nowrap">Barcode</TableHead>
+                  <TableHead className="whitespace-nowrap">Product Name</TableHead>
+                  <TableHead className="hidden md:table-cell">Category</TableHead>
+                  <TableHead className="hidden lg:table-cell">Metal</TableHead>
+                  <TableHead className="hidden sm:table-cell">Weight</TableHead>
+                  <TableHead>Stock</TableHead>
+                  <TableHead className="hidden sm:table-cell">Purchase ₹</TableHead>
+                  <TableHead className="hidden sm:table-cell">Selling ₹</TableHead>
+                  <TableHead className="hidden lg:table-cell">Margin</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-center">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
               <TableBody>
                 {filteredProducts.map((item) => (
                   <TableRow key={item.id} className="hover:bg-muted/50">
@@ -487,8 +514,8 @@ const filteredStats = useMemo(() => {
                     </TableCell>
                     <TableCell>
                       <Badge variant={item.stock === 0 ? "destructive" : item.stock <= 5 ? "secondary" : "default"} className="text-xs whitespace-nowrap">
-  {item.stock === 0 ? "Out of Stock" : item.stock <= 5 ? "Low Stock" : "In Stock"}
-</Badge>
+                        {item.stock === 0 ? "Out of Stock" : item.stock <= 5 ? "Low Stock" : "In Stock"}
+                      </Badge>
                     </TableCell>
                     <TableCell className="text-center">
                       <DropdownMenu>
@@ -497,20 +524,20 @@ const filteredStats = useMemo(() => {
                             <MoreHorizontal className="w-4 h-4" />
                           </Button>
                         </DropdownMenuTrigger>
-                       <DropdownMenuContent align="end">
-  <DropdownMenuItem onClick={() => openEdit(item)}>
-    <Pencil className="w-3.5 h-3.5 mr-2" /> Edit
-  </DropdownMenuItem>
-  <DropdownMenuItem onClick={() => setBarcodeProduct(item)}>
-    <QrCode className="w-3.5 h-3.5 mr-2" /> Barcode
-  </DropdownMenuItem>
-  <DropdownMenuItem onClick={() => setAdjustProduct(item)}>
-    <Package className="w-3.5 h-3.5 mr-2" /> Adjust Stock
-  </DropdownMenuItem>
-  <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setDeleteConfirm(item)}>
-    <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete
-  </DropdownMenuItem>
-</DropdownMenuContent>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => openEdit(item)}>
+                            <Pencil className="w-3.5 h-3.5 mr-2" /> Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setBarcodeProduct(item)}>
+                            <QrCode className="w-3.5 h-3.5 mr-2" /> Barcode
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setAdjustProduct(item)}>
+                            <Package className="w-3.5 h-3.5 mr-2" /> Adjust Stock
+                          </DropdownMenuItem>
+                          <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => setDeleteConfirm(item)}>
+                            <Trash2 className="w-3.5 h-3.5 mr-2" /> Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
                   </TableRow>
@@ -527,12 +554,72 @@ const filteredStats = useMemo(() => {
           <DialogHeader><DialogTitle>{editProduct ? "Edit Product" : "Add New Product"}</DialogTitle></DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Metal</Label><Select value={formData.metal_type} onValueChange={(v) => setFormData({ ...formData, metal_type: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Gold 24K">Gold 24K</SelectItem><SelectItem value="Gold 22K">Gold 22K</SelectItem><SelectItem value="Gold 18K">Gold 18K</SelectItem><SelectItem value="Gold 14K">Gold 14K</SelectItem><SelectItem value="Silver 925">Silver 925</SelectItem><SelectItem value="Diamond">Diamond</SelectItem><SelectItem value="Platinum">Platinum</SelectItem><SelectItem value="Imitation">Imitation</SelectItem></SelectContent></Select></div>
-              <div className="space-y-2"><Label htmlFor="name">Product Name</Label><Input id="name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="Gold Necklace" required /></div>
+              <div className="space-y-2">
+                <Label>Metal</Label>
+                <Select value={formData.metal_type} onValueChange={(v) => setFormData({ ...formData, metal_type: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Gold 24K">Gold 24K</SelectItem>
+                    <SelectItem value="Gold 22K">Gold 22K</SelectItem>
+                    <SelectItem value="Gold 18K">Gold 18K</SelectItem>
+                    <SelectItem value="Gold 14K">Gold 14K</SelectItem>
+                    <SelectItem value="Silver 925">Silver 925</SelectItem>
+                    <SelectItem value="Diamond">Diamond</SelectItem>
+                    <SelectItem value="Platinum">Platinum</SelectItem>
+                    <SelectItem value="Imitation">Imitation</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="name">Product Name</Label>
+                <Input id="name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="Gold Necklace" required />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Category</Label><Select value={formData.category} onValueChange={(v) => setFormData({ ...formData, category: v })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Necklace">Necklace</SelectItem><SelectItem value="Ring">Ring</SelectItem><SelectItem value="Bangle">Bangle</SelectItem><SelectItem value="Earring">Earring</SelectItem><SelectItem value="Pendant">Pendant</SelectItem><SelectItem value="Anklet">Anklet</SelectItem><SelectItem value="Chain">Chain</SelectItem><SelectItem value="Bracelet">Bracelet</SelectItem><SelectItem value="Set">Set</SelectItem></SelectContent></Select></div>
-              <div className="space-y-2"><Label htmlFor="weight">Weight (g)</Label><Input id="weight" type="number" step="0.01" value={formData.weight} onChange={(e) => setFormData({ ...formData, weight: e.target.value })} placeholder="45.5" required /></div>
+              <div className="space-y-2">
+                <Label>Category</Label>
+                <Select
+                  value={formData.category}
+                  onValueChange={(v) => {
+                    if (v === "custom") {
+                      setIsCustomCategory(true);
+                      setFormData({ ...formData, category: customCategory || "" });
+                    } else {
+                      setIsCustomCategory(false);
+                      setFormData({ ...formData, category: v });
+                    }
+                  }}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Necklace">Necklace</SelectItem>
+                    <SelectItem value="Ring">Ring</SelectItem>
+                    <SelectItem value="Bangle">Bangle</SelectItem>
+                    <SelectItem value="Earring">Earring</SelectItem>
+                    <SelectItem value="Pendant">Pendant</SelectItem>
+                    <SelectItem value="Anklet">Anklet</SelectItem>
+                    <SelectItem value="Chain">Chain</SelectItem>
+                    <SelectItem value="Bracelet">Bracelet</SelectItem>
+                    <SelectItem value="Set">Set</SelectItem>
+                    <SelectItem value="custom">+ Custom (type below)</SelectItem>
+                  </SelectContent>
+                </Select>
+                {isCustomCategory && (
+                  <Input
+                    placeholder="Enter custom category name"
+                    value={customCategory}
+                    onChange={(e) => {
+                      setCustomCategory(e.target.value);
+                      setFormData({ ...formData, category: e.target.value });
+                    }}
+                    className="mt-1"
+                  />
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="weight">Weight (g) {formData.metal_type === "Imitation" ? "(optional)" : "*"}</Label>
+                <Input id="weight" type="number" step="0.01" value={formData.weight} onChange={(e) => setFormData({ ...formData, weight: e.target.value })} placeholder="45.5" required />
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label htmlFor="stock">Stock</Label><Input id="stock" type="number" value={formData.stock} onChange={(e) => setFormData({ ...formData, stock: e.target.value })} placeholder="10" required /></div>
@@ -632,15 +719,15 @@ const filteredStats = useMemo(() => {
       )}
 
       {/* Stock Adjustment Dialog */}
-{adjustProduct && (
-  <StockAdjustment
-    productId={adjustProduct.id}
-    productName={adjustProduct.name}
-    currentStock={adjustProduct.stock}
-    open={!!adjustProduct}
-    onOpenChange={(open) => !open && setAdjustProduct(null)}
-  />
-)}
+      {adjustProduct && (
+        <StockAdjustment
+          productId={adjustProduct.id}
+          productName={adjustProduct.name}
+          currentStock={adjustProduct.stock}
+          open={!!adjustProduct}
+          onOpenChange={(open) => !open && setAdjustProduct(null)}
+        />
+      )}
     </DashboardLayout>
   );
 };
