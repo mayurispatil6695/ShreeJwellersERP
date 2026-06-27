@@ -44,6 +44,7 @@ interface Sale {
   items: SaleItem[];
   status: string;
   is_imitation_bill?: boolean;
+  
 }
 
 interface Product {
