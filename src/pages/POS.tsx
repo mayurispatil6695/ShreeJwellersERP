@@ -871,7 +871,14 @@ items: cart.map(item => ({
             <CardContent>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input ref={scanInputRef} placeholder="Scan barcode or type product name..." className="pl-10" />
+<Input
+  ref={scanInputRef}
+  placeholder="Scan barcode or type product name..."
+  className="pl-10"
+  value={searchQuery}
+  onChange={(e) => setSearchQuery(e.target.value)}
+  onKeyDown={handleSearchKeyDown}
+/>
               </div>
               <div className="mt-2">
                 <CameraScanner onScan={handleBarcodeScan} />
